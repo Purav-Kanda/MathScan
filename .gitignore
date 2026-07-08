@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Next.js (added in M2)
+node_modules/
+.next/
+out/
+
+# Env / secrets
+.env
+.env.local
+
+# Model weight caches
+*.pt
+*.onnx
+.cache/
+
+# OS
+.DS_Store
