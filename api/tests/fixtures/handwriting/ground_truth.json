@@ -1,0 +1,4 @@
+{
+  "_comment": "Map each image filename to its correct LaTeX. One entry per image you add to this folder. Example below -- replace/extend as you collect real images.",
+  "example-001.jpg": "x^{2}+3x=7"
+}
