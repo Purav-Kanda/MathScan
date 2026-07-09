@@ -26,28 +26,44 @@ def is_loaded() -> bool:
 
 def recognize_page(image: Image.Image) -> dict:
     """
-    Full-page recognition: Pix2Text's page-level call does layout detection
-    (find math/text regions) *and* OCR in one pass -- this is what SDD 4.2
-    means by "Pix2Text's bundled detector." One call gives us both the
-    per-region bounding boxes (FR-015) and the LaTeX for each.
+    Recognize math/text regions in one image.
+
+    HOW THIS FUNCTION GOT HERE (worth knowing -- this was a real debugging
+    path, not a design done up front): Pix2Text has two different entry
+    points. `Pix2Text.__call__`/`recognize_page` (the "full-page" API) runs
+    a document-layout detector FIRST to decide whether each region is a
+    paragraph, title, table, or figure, and only OCRs regions it labels as
+    text/title/table -- anything it calls "figure" is skipped, returned with
+    empty text. On real test photos (including a single equation on an
+    otherwise blank page), that layout detector classified everything as
+    "figure" and returned nothing, even though the actual math was perfectly
+    legible. Switching to `recognize_text_formula(return_text=False)` --
+    which skips layout detection and treats the whole image as "may contain
+    text and formulas" -- fixed it immediately: 99.99% confidence, correct
+    LaTeX, on the same photo that came back empty before. So this function
+    uses that method, not the full-page one.
+
+    Trade-off, stated plainly: we lose automatic separation of *multiple
+    distinct math regions scattered across a page* (a "Should," not "Must,"
+    per SRS FR-015) in exchange for OCR that actually works (SRS NFR-010,
+    a "Must": >=80% character accuracy). We still get a bounding box per
+    detected line/block, just not a layout-aware region label.
 
     Returns:
         {
-          "regions": [{"latex": str, "type": str, "bbox": [[x,y],...], "confidence": float|None}, ...],
+          "regions": [{"latex": str, "type": str, "bbox": [[x,y],...]|None, "confidence": float|None}, ...],
           "confidence_mean": float|None
         }
 
     Honest caveat (worth knowing, not hiding): the SRS (FR-013) asks for
-    per-token confidence. Pix2Text's public API only exposes a per-region
-    `score`, not per-token log-probs -- true per-token would require calling
-    the underlying TrOCR decoder directly, which is out of scope for v1.
-    Per-region confidence is what FR-022's "highlight low-confidence tokens"
-    actually highlights in v1: whole regions, not individual characters.
+    per-token confidence. Pix2Text only exposes a per-region `score`, not
+    per-token log-probs -- true per-token would require calling the
+    underlying TrOCR decoder directly, out of scope for v1.
     """
     if _p2t is None:
         raise RuntimeError("Model not loaded")
 
-    raw_regions = _p2t(image, resized_shape=768)
+    raw_regions = _p2t.recognize_text_formula(image, return_text=False, resized_shape=768)
 
     regions = []
     scores = []
