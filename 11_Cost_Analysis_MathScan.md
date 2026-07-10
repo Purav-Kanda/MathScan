@@ -10,7 +10,9 @@
 
 MathScan's current pipeline (M0/M1, built and verified) uses Pix2Text-MFR, a small open-source OCR model, self-hosted on our own server. A natural question: general chat products like Claude or ChatGPT can already read a photo of handwritten math and return LaTeX — often with better accuracy on messy handwriting, since they can use broader reasoning. So why not just call one of those APIs directly for every request?
 
-The answer is cost, and it's a bigger gap than it might look at first. This file works out the actual numbers, using each provider's own published pricing, and uses that math to justify a concrete product decision: a **free tier** (current self-hosted approach, near-zero marginal cost, capped at 150 pages/month), a **Basic top-up tier** (more of the same self-hosted OCR, $1 per 1,000 pages), and a **Premium tier** (routes the full page to a frontier model like Claude, higher accuracy, real per-page cost that has to be covered by what we charge). Full breakdown, including whether the Basic tier's price actually holds up, in section 5.
+The answer is cost, and it's a bigger gap than it might look at first. This file works out the actual numbers, using each provider's own published pricing.
+
+**The actual product decision (section 5): two tiers, both self-hosted Pix2Text, no Claude involved.** Free — 50 pages/month. Paid — $5/year, up to 500 pages/month. Simple on purpose: no per-page billing, no payment-processor overhead on tiny transactions, no second inference engine to maintain. Sections 4 and 4.4 keep the Claude-routing cost research in the file as background — it's what makes "no Claude tier" a deliberate choice with real numbers behind it, not a decision made without looking.
 
 ---
 
@@ -34,9 +36,37 @@ Once that VM is paid for, running one more page through Pix2Text costs effective
 
 This is the whole point of the free tier: it gets *cheaper per page* as usage grows, and it never has a per-request bill from a third party.
 
+### 3.1 Do you actually have to pay $30-50/month even if nobody uses it yet?
+
+No — that fixed VM cost was never a requirement, it was a choice that makes sense once there's real, steady traffic. Before that, a **scale-to-zero serverless GPU** host charges only for the seconds it's actually running inference, and drops to **exactly $0** the moment nobody's using it. That's a much better fit for a small/unproven launch.
+
+Current (2026) per-second rates on a small GPU that's plenty for a lightweight formula-recognition model like Pix2Text-MFR (no need for an H100-class card — that's built for large LLMs, not this):
+
+| Platform | GPU | Rate | Est. cost per page (~4 sec of inference) |
+|---|---|---|---|
+| Modal | T4 | $0.000164/sec | ~$0.0007 |
+| RunPod Serverless | T4 | ~$0.00011/sec | ~$0.0004 |
+| Google Cloud Run (GPU) | L4 | billed per second, scales to zero | similar order of magnitude |
+
+*(The 4-second-per-page inference time is a planning assumption, not a measured number — worth timing on your own machine before committing to it. Pix2Text is a small model, so a few seconds on a T4 is a reasonable guess, but verify.)*
+
+**Where this actually wins:** at zero or low traffic, cost is $0 or a few cents a day — no risk of paying for an idle box nobody's hitting. **Where the fixed VM eventually wins:** at high sustained volume, since serverless cost scales with usage while the VM's cost doesn't. The crossover point, using the $0.0007/page (Modal) estimate above:
+
+| Monthly VM cost (the alternative you'd be comparing against) | Pages/month where the fixed VM becomes cheaper than serverless |
+|---|---|
+| $30 | ~46,000 |
+| $40 | ~61,000 |
+| $50 | ~76,000 |
+
+**Practical recommendation: start on serverless (Modal or RunPod), pay nothing while validating whether anyone uses this, and only move to a dedicated VM once you're consistently past ~50,000-60,000 pages/month** — a real, demonstrated usage level, not a guess made before launch. This also removes the "pay for a VM nobody uses" risk from the whole M4 deployment step, not just the cost analysis.
+
+**Trade-off, stated plainly:** serverless GPUs have a cold-start delay — the container has to spin up before the first request after idle time is served, adding anywhere from under a second to tens of seconds depending on platform and model size. For a low-traffic launch this is a fine trade (the app's per-page progress UI already sets the expectation that pages take a few seconds), but it's a real UX cost compared to an always-warm dedicated VM.
+
 ---
 
-## 4. Frontier vision API cost (what the paid tier would actually cost us)
+## 4. Frontier vision API cost (background research — not part of the current product plan)
+
+**Note before reading this section:** the actual tier structure (section 5) doesn't route anything to Claude — it's two self-hosted Pix2Text tiers, free and paid. This section stays in the file as the reasoning *why* that's the choice: it's the real cost of the alternative (routing to Claude), worked out with real numbers instead of assumed. Worth keeping for later — if a "Premium, Claude-level accuracy" tier ever gets revisited, this is the starting math for it.
 
 ### 4.1 How image costs are calculated (Claude, confirmed from Anthropic's own docs)
 
@@ -93,46 +123,34 @@ Pix2Text's own inference cost doesn't change either way (still $0 marginal, same
 - **Formatting/structure cleanup** (hybrid, cheap, ~$0.006-0.015/page): worth doing if the complaint is "the raw output is correct but looks rough/disorganized."
 - **Accuracy improvement on messy handwriting** (direct image, full price, ~$0.015-0.038/page): the only option if the complaint is "Pix2Text is misreading my handwriting," since fixing that requires Claude to actually see it.
 
-A three-tier product (free Pix2Text-only → cheap hybrid "Polish" tier → full-price direct-image "Premium" tier) is a reasonable structure to consider if user feedback shows people want cleanup more often than re-reading — but that's a hypothesis to validate with actual users, same caveat as the pricing numbers in section 5.
+A three-tier product (free Pix2Text-only → cheap hybrid "Polish" tier → full-price direct-image "Premium" tier) was considered at one point, but the actual decision (section 5) went simpler: skip Claude entirely, at least for now.
 
 ---
 
-## 5. Proposed tier structure
+## 5. Actual tier structure: two tiers, one engine, no Claude
 
-Three tiers, in increasing order of what they cost us to run:
+**Free — 50 pages/month, Pix2Text.** Rate-limited per IP as already built (SRS NFR-022, 60 requests/hour), plus a 50-page/month account cap.
 
-**5.0 Free — Pix2Text, capped at 150 pages/month.** Self-hosted, rate-limited per IP (SRS NFR-022, 60 requests/hour) and now also capped at 150 pages/month per account. Marginal cost per page is near-zero (section 3), so this tier is cheap to give away broadly — the cap exists to bound how much free-tier volume can pile onto the one shared VM, not because any single page costs much.
+**Paid — $5/year, up to 500 pages/month, same Pix2Text engine.** Not a per-page charge, not a monthly subscription — one flat annual price. No Claude, no accuracy difference from the free tier, just 10x the monthly room. The 500-page figure is a soft target for now (enforce it the same simple way as the free cap); it isn't a hard technical limit that needs new infrastructure to exist.
 
-**5.1 Basic — pay-as-you-go top-up on the same Pix2Text engine, $1 per 1,000 pages (~$0.001/page).** Same accuracy as the free tier (still Pix2Text, not Claude) — this tier buys *more volume*, not *better OCR*. Intended for a user who's past the 150-page free cap but doesn't need Claude-level accuracy.
+**Why one flat annual price instead of metered billing:** the $1-per-1,000-pages idea from an earlier draft of this file ran into a real problem — a Stripe-style transaction fee (~2.9% + $0.30) eats roughly a third of a literal $1 charge, before any compute cost is even counted. A single $5/year charge pays that processor fee *once*, not every time someone tops up, and is a far simpler thing to build, market, and explain than metered pricing.
 
-**5.2 Premium — routes the full page image directly to Claude Sonnet 5** instead of Pix2Text. This is closer to "what Claude/ChatGPT already do" — a general vision model reading the whole page in one pass, likely higher accuracy on messy handwriting, in exchange for a real per-page cost we have to recover through pricing.
+### 5.1 Is $5/year actually sustainable?
 
-### 5.1.1 Is $1 per 1,000 pages actually sustainable?
+Using the serverless GPU rates from section 3.1 (Modal ~$0.0007/page, RunPod ~$0.00011/sec ≈ $0.0004/page) — Pix2Text is the only model being served, so these are the real relevant numbers now, not the Claude figures in section 4.
 
-Worked through honestly, this price is tight, and likely loses money below a certain volume — worth knowing before committing to it.
+$5/year is ~$0.4167/month in revenue. At the 500-page/month soft cap:
 
-**Against raw compute cost:** the self-hosted table in section 3 shows real cost per page falling as volume rises, but even at 10,000 pages/month the VM still costs ~$0.004/page. Charging $0.001/page is *below* that at any volume under ~40,000 Basic-tier pages in a month (using $40/month VM cost ÷ $0.001/page):
+| Platform | Cost at 500 pages/month | Monthly margin | Annual margin |
+|---|---|---|---|
+| Modal (~$0.0007/page) | $0.35 | $0.067 | ~$0.80 |
+| RunPod (~$0.0004/page) | $0.20 | $0.217 | ~$2.60 |
 
-| Monthly VM cost | Basic-tier pages needed to break even (at $0.001/page revenue) |
-|---|---|
-| $30 | 30,000 |
-| $40 | 40,000 |
-| $50 | 50,000 |
+Thin on Modal, healthy on RunPod — but positive either way, *even if a paying user maxes out the cap every single month of the year.* Realistically most paying users won't hit 500 pages/month consistently (the worked example in section 7 shows a genuinely active student uses far less), so actual margins per paying user will usually be better than this worst-case table. The breakeven point — where a user's usage exactly wipes out the $5 — is ~595 pages/month on Modal or ~1,042 pages/month on RunPod; someone would have to blow well past the 500-page soft cap, consistently, for a full year, to actually lose money.
 
-Below that many paid pages in a month, this tier is a real loss, not a thin margin — it's subsidized by whatever else is making money (the Premium tier, mainly). That's a fine short-term choice to win users, but it shouldn't be mistaken for a profitable line item until volume clears the numbers above.
+### 5.2 What this gives up, on purpose
 
-**Against payment processing fees, which matter more here than the compute cost does.** A Stripe-style transaction fee (~2.9% + $0.30) charged on a literal $1 purchase is `0.029 × $1 + $0.30 = $0.329` — roughly **a third of that $1 gone to the payment processor alone**, before any compute cost is even counted. Selling this tier in raw $1 increments is the worst way to price it. The fixed $0.30 piece only becomes a small percentage of the charge once the charge itself is bigger — e.g. a $5 pack (still $1-per-1,000-pages rate, sold as 5,000 pages for $5) drops processor overhead to `0.029 × $5 + $0.30 = $0.445`, about 9% of the charge instead of 33%. **Practical fix: never sell this tier as a $1 transaction; sell it as a pack (e.g. $5 for 5,000 pages) or fold it into the same monthly-subscription mechanism as Premium (5.2.1 below), so the $0.30 fixed fee is paid once per month, not once per top-up.**
-
-### 5.2.1 Pricing the Premium tier
-
-At ~$0.015/page in raw API cost (Sonnet 5, post-introductory pricing), a sustainable price needs to cover: the API cost itself, payment processor fees, and margin to fund the free/basic tiers' fixed VM cost and general product development.
-
-Two starting options to validate with actual users, not final numbers:
-
-- **Pay-per-page:** charge $0.05-0.08 per page — roughly 3-5x the raw API cost, which is a reasonable starting markup for a consumer product with per-transaction payment overhead.
-- **Monthly subscription with a page quota** (usually converts better than metered pricing for a student audience): e.g. "$5/month for 150 pages" (~$0.033/page) or "$10/month for 400 pages" (~$0.025/page). A subscription also smooths out payment processor fees across many pages instead of eating a $0.30 minimum fee on every single tiny transaction.
-
-This is a starting hypothesis, not a final price — real pricing should get validated against what students will actually pay, which nothing in this file can tell us on its own.
+No Claude-level accuracy option, at least for now — a user with very messy handwriting that Pix2Text struggles with has no fallback in this design. Section 4's research stays in this file specifically so that door isn't closed forever: if real users hit that accuracy ceiling often enough to matter, the cost math for adding a Claude-routed tier back in is already worked out above, not something to redo from scratch.
 
 ---
 
@@ -143,7 +161,8 @@ This is a starting hypothesis, not a final price — real pricing should get val
 - Actual output length (and therefore output token cost) depends heavily on how much math is actually on a page — a page with ten equations costs more in output tokens than a page with one.
 - Anthropic's pricing includes a batch-processing discount (50% off) for non-real-time workloads; not used in the estimates above since users expect a live result, not a delayed batch response.
 - The hybrid (section 4.4) token estimates assume ~150 tokens of raw LaTeX per page; a page with many equations produces more text and costs slightly more than shown, though still far less than the image-token cost it's being compared against.
-- The Basic tier's break-even table (5.1.1) uses the VM's full monthly cost as the bar to clear, but that VM is also serving free-tier traffic for $0 revenue — so the real break-even volume is higher than shown, not lower, once free-tier load is accounted for.
+- The $5/year sustainability table (5.1) assumes a paying user's usage is served entirely by serverless compute at the rates in section 3.1 — if usage ever grows enough to justify a dedicated VM instead (past the ~50,000-60,000 pages/month crossover in 3.1), the actual per-page cost for paid users would be even lower than shown here, not higher.
+- The 500-page/month soft cap on the paid tier isn't enforced by any code yet — it's a pricing assumption to build toward, not a limit that exists today.
 
 ---
 
@@ -151,49 +170,40 @@ This is a starting hypothesis, not a final price — real pricing should get val
 
 A concrete run of the numbers above, for a single typical user: **12 pages/week of homework, over a 4-month term.**
 
-**Assumptions, stated plainly:** 4 months modeled as a 16-week semester (192 pages total, ~48 pages/month average) — a common school-term length, but real semesters run anywhere from ~14-18 weeks, so treat 192 as a representative number, not an exact one. 48 pages/month sits comfortably under the Free tier's 150-page cap (section 5.0), so this student never touches the Basic or Premium tier unless they choose to.
+**Assumptions, stated plainly:** 4 months modeled as a 16-week semester (192 pages total, ~48 pages/month average) — a common school-term length, but real semesters run anywhere from ~14-18 weeks, so treat 192 as a representative number, not an exact one. 48 pages/month is just barely under the Free tier's 50-page cap (section 5) — this student is close to the realistic ceiling of what "free" comfortably covers, not a token light user.
 
 ### 7.1 What it actually costs (Free tier, as built)
 
 | | Per month | Over the 4-month term |
 |---|---|---|
 | What the student pays | $0 | $0 |
-| Marginal infra cost to us | ~$0 (VM cost is fixed regardless of this one user, section 3) | ~$0 |
+| Marginal infra cost to us (serverless, section 3.1) | ~48 pages × $0.0004-0.0007 ≈ $0.02-$0.03 | ~$0.08-$0.13 |
 
-This is the entire point of the free tier: a normal student's real usage pattern (well under 150 pages/month) costs us essentially nothing beyond the VM we're already paying for, and costs them nothing at all.
+This is the entire point of the free tier: a genuinely active student (not a token light user — 48 of the 50-page cap) costs us pennies for the whole term, on serverless, and costs them nothing.
 
 ### 7.2 What the student would have paid without a free tier
 
-If MathScan only offered the Premium (Claude vision) tier — i.e., no free option existed — this same 192 pages over 4 months would cost:
+If there were no free option at all, this student would need the $5/year paid tier (section 5) just to use the product — their usage fits trivially inside its 500-page/month cap.
 
-| Premium pricing model | Cost over 4 months | Math |
-|---|---|---|
-| Subscription, $5/mo for 150 pages | **$20.00** | $5 × 4 months (48/month fits the 150-page quota, so no overage) |
-| Pay-per-page, $0.05-0.08/page | **$9.60 - $15.36** | 192 pages × $0.05-0.08 |
+**Money the free tier saves this student: the full $5/year fee**, since 48 pages/month would otherwise force them onto the paid plan even though they're using less than a tenth of what it allows. That's a small number in absolute terms — the whole point of a $5/year price is that it's small — but the free tier is what makes the product genuinely free for the large majority of students who never need more than 50 pages/month.
 
-**Money the free tier saves this student: ~$10-$20 over the term**, depending which Premium pricing model they'd otherwise have been on. The subscription model saves them more precisely because they're paying a flat $5/month regardless of only using a third of the quota — the free tier removes that "paying for headroom you don't need" problem entirely.
+### 7.3 What using Claude instead would have cost (hypothetical — not the actual design)
 
-### 7.3 How much Claude API budget the free tier saves us
+Section 4's Claude research isn't part of the shipped product, but it's worth keeping the comparison concrete: if this student's 192 pages had instead been sent to Claude every time (the road not taken), the raw API cost would have been:
 
-This is a different number from 7.2 — 7.2 is what the *student* avoids paying us; this is what *we* avoid paying Anthropic, by serving this student's pages with self-hosted Pix2Text instead of routing every page to Claude.
-
-If this student's 192 pages had instead been sent straight to Claude (the direct-image approach, section 4.2), the raw API cost we'd have paid is:
-
-| Model | Raw API cost we avoid, over 4 months |
+| Model | Raw API cost, over 4 months |
 |---|---|
 | Hybrid: Pix2Text text → Claude Haiku restructure (section 4.4) | **~$0.56** |
 | Claude Haiku 4.5 (direct image) | **~$0.84** |
 | Hybrid: Pix2Text text → Claude Sonnet 5 restructure (intro pricing) | **~$1.13** |
-| Hybrid: Pix2Text text → Claude Sonnet 5 restructure (post-Sept 2026) | **~$1.71** |
 | Claude Sonnet 5 (direct image, intro pricing) | **~$2.92** |
-| Claude Sonnet 5 (direct image, post-Sept 2026) | **~$4.38** |
 | Claude Opus 4.8 (direct image) | **~$7.28** |
 
-**Claude budget saved per student like this, over one semester: roughly $0.56-$7.28**, depending on which model/approach would have handled it — a few dollars per student at most, but it compounds directly with user count: 100 students with this exact usage pattern would be $56-$728 in avoided Claude spend over the same 4 months, with zero extra infra cost since they all fit inside the same free-tier VM capacity.
+That's the real reason a $5/year, Pix2Text-only product is viable at all: even the *cheapest* Claude option (~$0.56/semester) already costs more than a whole year of this student's Free-tier usage on serverless (~$0.08-$0.13/semester). Routing to Claude for a typical user would have cost more than what we're charging paying users for a full year.
 
 ### 7.4 The honest takeaway
 
-For a typical, moderate-usage student, the free tier is cheap to provide (~$0 marginal) and saves the student real money (~$10-$20/term) compared to a paid-only product — while also costing us far less than routing them through Claude would (~$1-$7/term in avoided API spend). The economic tension in this file isn't about this typical user; it's about the minority of users who'd exceed 150 pages/month (where Basic's thin margins in section 5.1.1 start to matter) or who specifically want Claude-level accuracy on hard handwriting (Premium, section 5.2).
+For a typical active student, Free costs us pennies and costs them nothing; a heavier user pays $5/year for 10x the room, and the economics hold even in the worst case (section 5.1). The trade this design makes on purpose: no Claude-level accuracy option for the minority of users whose handwriting Pix2Text genuinely struggles with. That's a real gap, not a hidden one — and section 4's numbers are sitting right there if it's ever worth closing.
 
 ---
 
@@ -202,3 +212,6 @@ For a typical, moderate-usage student, the free tier is cheap to provide (~$0 ma
 - [Claude Platform pricing](https://platform.claude.com/docs/en/about-claude/pricing) — Anthropic, accessed July 2026
 - [Claude vision docs — image resolution and token cost](https://platform.claude.com/docs/en/build-with-claude/vision) — Anthropic, accessed July 2026
 - [OpenAI API pricing](https://developers.openai.com/api/docs/pricing) — OpenAI, accessed July 2026
+- [Modal pricing](https://modal.com/pricing) — Modal, accessed July 2026
+- [RunPod serverless pricing](https://docs.runpod.io/serverless/pricing) — RunPod, accessed July 2026
+- [Cloud Run GPU support](https://docs.cloud.google.com/run/docs/configuring/services/gpu) — Google Cloud, accessed July 2026
