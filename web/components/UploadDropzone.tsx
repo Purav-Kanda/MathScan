@@ -8,6 +8,7 @@
 // that, while everything else in the app stays server-rendered by default.
 
 import { useState, useRef, DragEvent, ChangeEvent } from "react";
+import { validateFiles } from "@/lib/validateFiles";
 
 interface UploadDropzoneProps {
   files: File[];
@@ -23,7 +24,18 @@ interface UploadDropzoneProps {
 // standard React pattern for "a form input whose value the parent needs."
 export default function UploadDropzone({ files, onFilesChange, disabled }: UploadDropzoneProps) {
   const [isDragActive, setIsDragActive] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // WHY validate here, not in the parent: the parent shouldn't need to
+  // know HOW files get picked (drag vs click) to validate them -- both
+  // paths below funnel through this one function, so validation logic
+  // lives in exactly one place regardless of how the files arrived.
+  function acceptFiles(incoming: File[]) {
+    const { validFiles, errors } = validateFiles(incoming);
+    setValidationErrors(errors);
+    onFilesChange(validFiles);
+  }
 
   function handleDragOver(e: DragEvent<HTMLDivElement>) {
     e.preventDefault(); // browsers open dropped files by default -- this stops that
@@ -38,12 +50,12 @@ export default function UploadDropzone({ files, onFilesChange, disabled }: Uploa
     e.preventDefault();
     setIsDragActive(false);
     if (disabled) return;
-    onFilesChange(Array.from(e.dataTransfer.files));
+    acceptFiles(Array.from(e.dataTransfer.files));
   }
 
   function handleFileInputChange(e: ChangeEvent<HTMLInputElement>) {
     if (e.target.files) {
-      onFilesChange(Array.from(e.target.files));
+      acceptFiles(Array.from(e.target.files));
     }
   }
 
@@ -80,6 +92,16 @@ export default function UploadDropzone({ files, onFilesChange, disabled }: Uploa
           onChange={handleFileInputChange}
         />
       </div>
+
+      {validationErrors.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {validationErrors.map((error, i) => (
+            <li key={i} className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+              {error}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {files.length > 0 && (
         <ul className="mt-4 space-y-1">

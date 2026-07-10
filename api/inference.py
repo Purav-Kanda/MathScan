@@ -8,10 +8,33 @@ real (slow) model -- see tests/test_inference.py, which fakes this module's
 
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, ImageOps
 from pix2text import Pix2Text
 
 _p2t: Optional[Pix2Text] = None
+
+
+def enhance_contrast(image: Image.Image) -> Image.Image:
+    """
+    FR-007 (Should): optional preprocessing for low-quality scans -- faint
+    pencil marks, uneven phone-camera lighting, a slightly washed-out photo.
+
+    WHY autocontrast specifically, not a fixed brightness/contrast multiplier:
+    autocontrast looks at the actual histogram of THIS image and stretches it
+    so the darkest pixel becomes black and the lightest becomes white (per
+    channel), rather than applying a blind fixed adjustment that could
+    overcorrect an already-good photo or undercorrect a very faint one. That
+    adapts automatically to whatever the user uploaded instead of needing a
+    manually-tuned constant.
+
+    WHY cutoff=1: a scan often has a few genuinely near-black (shadow/crease)
+    or near-white (glare) pixels that aren't representative of the actual
+    writing. Without a cutoff, autocontrast would stretch the histogram to
+    include those outliers, under-enhancing everything else. Clipping the
+    extreme 1% on each end before stretching gives a more useful result on
+    real photos.
+    """
+    return ImageOps.autocontrast(image, cutoff=1)
 
 
 def load_model() -> None:
@@ -24,7 +47,7 @@ def is_loaded() -> bool:
     return _p2t is not None
 
 
-def recognize_page(image: Image.Image) -> dict:
+def recognize_page(image: Image.Image, apply_contrast: bool = False) -> dict:
     """
     Recognize math/text regions in one image.
 
@@ -62,6 +85,9 @@ def recognize_page(image: Image.Image) -> dict:
     """
     if _p2t is None:
         raise RuntimeError("Model not loaded")
+
+    if apply_contrast:
+        image = enhance_contrast(image)
 
     raw_regions = _p2t.recognize_text_formula(image, return_text=False, resized_shape=768)
 

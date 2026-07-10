@@ -15,6 +15,8 @@ nothing -- see inference.py's docstring for the full story.
 Run from api/: pytest
 """
 
+from PIL import Image
+
 import inference
 
 
@@ -29,12 +31,16 @@ class FakePosition:
 
 
 class FakeP2T:
-    """Stands in for the loaded Pix2Text instance."""
+    """Stands in for the loaded Pix2Text instance. Records the last image it
+    was handed so tests can check whether preprocessing actually ran before
+    the image got here."""
 
     def __init__(self, regions):
         self._regions = regions
+        self.received_image = None
 
     def recognize_text_formula(self, image, return_text=False, resized_shape=768):
+        self.received_image = image
         return self._regions
 
 
@@ -70,3 +76,41 @@ def test_recognize_page_handles_no_regions(monkeypatch):
     # confident-looking answer when we don't actually have one).
     assert result["regions"] == []
     assert result["confidence_mean"] is None
+
+
+def _flat_gray_image(value: int) -> Image.Image:
+    """A 20x20 image where every pixel is the same gray value -- a stand-in
+    for a faint, washed-out scan (narrow histogram, nothing near black or
+    white)."""
+    return Image.new("L", (20, 20), color=value).convert("RGB")
+
+
+def test_enhance_contrast_widens_a_narrow_histogram():
+    # Pixels all sit in a narrow band (100-150), like a faint pencil scan --
+    # autocontrast should stretch that band so it spans much closer to the
+    # full 0-255 range.
+    narrow = Image.new("L", (10, 10))
+    narrow.putdata([100] * 50 + [150] * 50)
+    narrow = narrow.convert("RGB")
+
+    widened = inference.enhance_contrast(narrow)
+
+    before_min, before_max = narrow.convert("L").getextrema()
+    after_min, after_max = widened.convert("L").getextrema()
+    assert after_max - after_min > before_max - before_min
+
+
+def test_recognize_page_applies_contrast_only_when_requested(monkeypatch):
+    fake = FakeP2T([])
+    monkeypatch.setattr(inference, "_p2t", fake)
+    narrow = Image.new("L", (10, 10))
+    narrow.putdata([100] * 50 + [150] * 50)
+    narrow = narrow.convert("RGB")
+
+    inference.recognize_page(narrow, apply_contrast=False)
+    unchanged_min, unchanged_max = fake.received_image.convert("L").getextrema()
+    assert (unchanged_min, unchanged_max) == (100, 150)
+
+    inference.recognize_page(narrow, apply_contrast=True)
+    enhanced_min, enhanced_max = fake.received_image.convert("L").getextrema()
+    assert enhanced_max - enhanced_min > unchanged_max - unchanged_min

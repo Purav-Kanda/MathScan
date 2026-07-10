@@ -14,7 +14,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from PIL import Image
 
@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/ocr", tags=["ocr"])
 JOBS_DIR = Path("/tmp/jobs")
 MAX_PDF_MB = 25
 MAX_PAGES = 50
+MAX_IMAGE_MB = 25  # same per-file cap as the PDF endpoint, for consistency
 
 
 def _sse(payload: dict) -> str:
@@ -36,7 +37,7 @@ def _sse(payload: dict) -> str:
 
 
 @router.post("/pdf")
-async def ocr_pdf(file: UploadFile = File(...)):
+async def ocr_pdf(file: UploadFile = File(...), enhance_contrast: bool = Form(False)):
     if not is_loaded():
         raise HTTPException(503, "Model still loading")
     if file.content_type != "application/pdf":
@@ -75,7 +76,7 @@ async def ocr_pdf(file: UploadFile = File(...)):
                 # thread so the loop keeps serving other requests. This is
                 # the "async-dispatches to inference_service" step in SDD
                 # Flow A.
-                result = await asyncio.to_thread(recognize_page, image)
+                result = await asyncio.to_thread(recognize_page, image, enhance_contrast)
                 yield _sse({"page": page_num, "total": total, "result": result})
         finally:
             # FR-050: delete uploaded content immediately after inference,
@@ -87,9 +88,17 @@ async def ocr_pdf(file: UploadFile = File(...)):
 
 
 @router.post("/images")
-async def ocr_images(files: list[UploadFile] = File(...)):
+async def ocr_images(files: list[UploadFile] = File(...), enhance_contrast: bool = Form(False)):
     if not is_loaded():
         raise HTTPException(503, "Model still loading")
+
+    # WHY reject the WHOLE request here, not per-file like the size/type
+    # checks below: too many files isn't "this one file is bad," it's "this
+    # request itself is asking for too much work" -- same category of
+    # protection as MAX_PAGES on the PDF endpoint (SRS scope: <=50
+    # pages/images per job either way).
+    if len(files) > MAX_PAGES:
+        raise HTTPException(400, f"Cannot process more than {MAX_PAGES} images in one request")
 
     job_id = str(uuid.uuid4())
     job_dir = JOBS_DIR / job_id
@@ -112,6 +121,14 @@ async def ocr_images(files: list[UploadFile] = File(...)):
             saved_pages.append((page_num, None, "not an image"))
             continue
         raw = await f.read()
+        # WHY check size AFTER reading, not before: there's no way to know
+        # an upload's exact size without reading it (UploadFile doesn't
+        # expose a reliable size header we can trust) -- but we still check
+        # before writing to disk or running the (expensive) OCR model, so a
+        # too-large file fails cheaply instead of wasting inference time.
+        if len(raw) > MAX_IMAGE_MB * 1024 * 1024:
+            saved_pages.append((page_num, None, f"exceeds {MAX_IMAGE_MB}MB limit"))
+            continue
         page_path = job_dir / f"page-{page_num}.jpg"
         page_path.write_bytes(raw)
         saved_pages.append((page_num, str(page_path), None))
@@ -123,7 +140,7 @@ async def ocr_images(files: list[UploadFile] = File(...)):
                     yield _sse({"page": page_num, "total": total, "error": error})
                     continue
                 image = Image.open(page_path).convert("RGB")
-                result = await asyncio.to_thread(recognize_page, image)
+                result = await asyncio.to_thread(recognize_page, image, enhance_contrast)
                 yield _sse({"page": page_num, "total": total, "result": result})
         finally:
             shutil.rmtree(job_dir, ignore_errors=True)

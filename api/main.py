@@ -14,6 +14,7 @@ from PIL import Image
 
 import inference
 from routers.ocr import router as ocr_router
+from routers.export import router as export_router
 
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MathScan Inference API", lifespan=lifespan)
 app.include_router(ocr_router)
+app.include_router(export_router)
 
 
 @app.get("/api/health")
