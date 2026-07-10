@@ -54,8 +54,6 @@ Assumptions: ~4,784 input tokens per page image (near Claude's high-res cap) + ~
 | Claude Opus 4.8 | $5/MTok | $25/MTok | **~$0.0379** | Highest quality, highest cost |
 | OpenAI GPT-5.4 (approximate) | $1.25-2.50/MTok | $7.50-15/MTok | **~$0.006-0.013** | OpenAI's exact image-to-token formula wasn't available in what I could pull directly; this range is estimated from comparable per-token rates, not a confirmed image-token count — verify before relying on it for real billing |
 
-*(Correction from an earlier draft of this file: the Sonnet 5 and Opus 4.8 rows previously showed input-token cost only, with the ~500 output tokens left out of the total by mistake. The numbers above include both input and output, consistent with the Haiku row.)*
-
 ### 4.3 Same volumes as the self-hosted table, using Claude Sonnet 5 (recommended paid-tier model)
 
 | Pages processed per month | Cost at ~$0.015/page |
@@ -78,11 +76,16 @@ Assumptions: ~150 tokens of raw Pix2Text LaTeX output + ~300 tokens of instructi
 
 | Model | Hybrid (Pix2Text text → Claude) | Direct image → Claude | Hybrid is cheaper by |
 |---|---|---|---|
+| Claude Haiku 4.5 | **~$0.0029** | ~$0.0044 | ~1.5x |
 | Claude Sonnet 5 (intro pricing) | **~$0.0059** | ~$0.0152 | ~2.6x |
 | Claude Sonnet 5 (post-Sept 2026) | **~$0.0089** | ~$0.0228 | ~2.6x |
 | Claude Opus 4.8 | **~$0.0148** | ~$0.0379 | ~2.6x |
 
 Pix2Text's own inference cost doesn't change either way (still $0 marginal, same self-hosted VM) — the entire savings comes from what Claude has to read: a few hundred tokens of text versus thousands of tokens of image.
+
+**Does hybrid beat Haiku specifically?** Yes, but by a smaller margin than it beats Sonnet or Opus — only ~1.5x, not ~2.6x. That's because Haiku's direct-image cost already uses Claude's *cheaper* standard-resolution tier (1,568 visual tokens), while Sonnet/Opus direct-image is stuck paying for the high-res tier (4,784 tokens) — there's simply less input-token fat to trim off Haiku to begin with.
+
+**A sharper question worth asking, though: does Hybrid-Sonnet beat plain Direct-Haiku?** No — and this is the one non-obvious result in this whole comparison. Direct-image Haiku (~$0.0044/page) is *cheaper* than Hybrid-Sonnet (~$0.0059/page), even though Hybrid-Sonnet only sends text. Ranked cheapest to most expensive, intro pricing: **Hybrid-Haiku ($0.0029) < Direct-Haiku ($0.0044) < Hybrid-Sonnet ($0.0059) < Hybrid-Opus ($0.0148) < Direct-Sonnet ($0.0152) < Direct-Opus ($0.0379).** So if raw cost is the only goal, Hybrid-Haiku wins outright — but remember section 4.4's core caveat still applies: any "Hybrid" option, regardless of which model does the restructuring, never lets Claude see the actual handwriting, so it can't fix an OCR misread the way Direct-Haiku (or any direct-image option) can.
 
 **Why it isn't a free upgrade.** The whole reason to route to Claude at all (per section 5 below) is "this reads messy handwriting better than Pix2Text does." That benefit only exists if Claude actually looks at the photo. In the hybrid setup, Claude never sees the handwriting — it only sees whatever Pix2Text already transcribed, right or wrong. If Pix2Text misread a symbol, Claude can restructure and clean up formatting around that mistake, but it has no way to know the mistake happened, let alone fix it, because the source of truth (the image) isn't in front of it anymore. So the hybrid approach can make output look more polished (better structure, consistent notation, real sentences around the math) but it inherits Pix2Text's accuracy ceiling exactly — it cannot buy back the accuracy Claude's vision would have added.
 
@@ -141,6 +144,56 @@ This is a starting hypothesis, not a final price — real pricing should get val
 - Anthropic's pricing includes a batch-processing discount (50% off) for non-real-time workloads; not used in the estimates above since users expect a live result, not a delayed batch response.
 - The hybrid (section 4.4) token estimates assume ~150 tokens of raw LaTeX per page; a page with many equations produces more text and costs slightly more than shown, though still far less than the image-token cost it's being compared against.
 - The Basic tier's break-even table (5.1.1) uses the VM's full monthly cost as the bar to clear, but that VM is also serving free-tier traffic for $0 revenue — so the real break-even volume is higher than shown, not lower, once free-tier load is accounted for.
+
+---
+
+## 7. Worked example: one average student, one semester
+
+A concrete run of the numbers above, for a single typical user: **12 pages/week of homework, over a 4-month term.**
+
+**Assumptions, stated plainly:** 4 months modeled as a 16-week semester (192 pages total, ~48 pages/month average) — a common school-term length, but real semesters run anywhere from ~14-18 weeks, so treat 192 as a representative number, not an exact one. 48 pages/month sits comfortably under the Free tier's 150-page cap (section 5.0), so this student never touches the Basic or Premium tier unless they choose to.
+
+### 7.1 What it actually costs (Free tier, as built)
+
+| | Per month | Over the 4-month term |
+|---|---|---|
+| What the student pays | $0 | $0 |
+| Marginal infra cost to us | ~$0 (VM cost is fixed regardless of this one user, section 3) | ~$0 |
+
+This is the entire point of the free tier: a normal student's real usage pattern (well under 150 pages/month) costs us essentially nothing beyond the VM we're already paying for, and costs them nothing at all.
+
+### 7.2 What the student would have paid without a free tier
+
+If MathScan only offered the Premium (Claude vision) tier — i.e., no free option existed — this same 192 pages over 4 months would cost:
+
+| Premium pricing model | Cost over 4 months | Math |
+|---|---|---|
+| Subscription, $5/mo for 150 pages | **$20.00** | $5 × 4 months (48/month fits the 150-page quota, so no overage) |
+| Pay-per-page, $0.05-0.08/page | **$9.60 - $15.36** | 192 pages × $0.05-0.08 |
+
+**Money the free tier saves this student: ~$10-$20 over the term**, depending which Premium pricing model they'd otherwise have been on. The subscription model saves them more precisely because they're paying a flat $5/month regardless of only using a third of the quota — the free tier removes that "paying for headroom you don't need" problem entirely.
+
+### 7.3 How much Claude API budget the free tier saves us
+
+This is a different number from 7.2 — 7.2 is what the *student* avoids paying us; this is what *we* avoid paying Anthropic, by serving this student's pages with self-hosted Pix2Text instead of routing every page to Claude.
+
+If this student's 192 pages had instead been sent straight to Claude (the direct-image approach, section 4.2), the raw API cost we'd have paid is:
+
+| Model | Raw API cost we avoid, over 4 months |
+|---|---|
+| Hybrid: Pix2Text text → Claude Haiku restructure (section 4.4) | **~$0.56** |
+| Claude Haiku 4.5 (direct image) | **~$0.84** |
+| Hybrid: Pix2Text text → Claude Sonnet 5 restructure (intro pricing) | **~$1.13** |
+| Hybrid: Pix2Text text → Claude Sonnet 5 restructure (post-Sept 2026) | **~$1.71** |
+| Claude Sonnet 5 (direct image, intro pricing) | **~$2.92** |
+| Claude Sonnet 5 (direct image, post-Sept 2026) | **~$4.38** |
+| Claude Opus 4.8 (direct image) | **~$7.28** |
+
+**Claude budget saved per student like this, over one semester: roughly $0.56-$7.28**, depending on which model/approach would have handled it — a few dollars per student at most, but it compounds directly with user count: 100 students with this exact usage pattern would be $56-$728 in avoided Claude spend over the same 4 months, with zero extra infra cost since they all fit inside the same free-tier VM capacity.
+
+### 7.4 The honest takeaway
+
+For a typical, moderate-usage student, the free tier is cheap to provide (~$0 marginal) and saves the student real money (~$10-$20/term) compared to a paid-only product — while also costing us far less than routing them through Claude would (~$1-$7/term in avoided API spend). The economic tension in this file isn't about this typical user; it's about the minority of users who'd exceed 150 pages/month (where Basic's thin margins in section 5.1.1 start to matter) or who specifically want Claude-level accuracy on hard handwriting (Premium, section 5.2).
 
 ---
 
