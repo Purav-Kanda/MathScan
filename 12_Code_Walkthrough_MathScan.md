@@ -36,7 +36,9 @@ async def lifespan(app: FastAPI):
 
 Pix2Text takes about 30 seconds to load its weights into memory. `lifespan` runs this **once**, when the server process starts — not on every request. Every request after that reuses the same already-loaded model sitting in `inference._p2t`. `/api/health` exposes `model_loaded` specifically so a load balancer or deploy script can wait for that flag before sending real traffic — otherwise the first few users would hit a half-initialized server.
 
-This assumption — "the process stays alive and the model stays loaded" — is exactly what breaks if you deploy to a scale-to-zero serverless platform (discussed in the cost analysis file, section 3.1): a fresh cold start means paying that 30-second load cost again. Worth remembering going into M4.
+This assumption — "the process stays alive and the model stays loaded" — is exactly what breaks if you deploy to a scale-to-zero serverless platform (discussed in the cost analysis file, section 3.1): a fresh cold start means paying that 30-second load cost again. This turned out to matter for real once M4 actually shipped: Modal's `scaledown_window=300` keeps a container warm for 5 minutes after its last request specifically so a burst of activity doesn't re-pay this cost on every single request, only after a real idle gap.
+
+**CORS** (`CORSMiddleware`, added during M4): through M3 the frontend fetched relative paths like `/api/ocr/pdf`, which only works when browser and backend share an origin. Once the backend moved to its own Modal URL and the frontend to its own Vercel URL, the browser started blocking those `fetch()` calls by default — CORS is what tells the browser "this specific origin is allowed to call this API." `ALLOWED_ORIGIN` is read from an env var (defaulting to the real deployed frontend, `https://math-scan-lake.vercel.app`) rather than hardcoded, because the exact frontend URL wasn't known until after Vercel actually deployed it — and it started as `"*"` (allow anything) for the first deploy, tightened to the real domain only once that URL was confirmed working end-to-end.
 
 `/api/ocr/test` is a leftover from M0 — a single-image, no-SSE endpoint kept around purely because it's the fastest way to manually check "is the model actually working" via a plain curl command, without dealing with multipart-multi-file-plus-streaming plumbing.
 
@@ -93,6 +95,32 @@ Tectonic's own error output says *that* line N is broken, but not what's actuall
 ### `requirements.txt`
 
 Pinned versions for `fastapi`, `uvicorn`, `pix2text`, `Pillow`, `pdf2image`, `pytest`, `httpx`, and `PyMuPDF` (added explicitly once tests started using it directly, rather than relying on it being pulled in indirectly by `pix2text`).
+
+### `modal_app.py` — deploying the backend to Modal (M4)
+
+A separate file from `main.py`, on purpose: `main.py` stays a plain, Modal-agnostic FastAPI app so `uvicorn main:app` still works for local dev exactly as documented above, and so `test_export.py`'s `TestClient` pattern never needs to know Modal exists. `modal_app.py` wraps that same app for Modal without changing what it is.
+
+Modal was chosen over RunPod or a Hetzner VM specifically because it can host a real ASGI app — this exact FastAPI app, SSE streaming included — almost unchanged, via `@modal.asgi_app()`. RunPod Serverless is built around a single input/output "job handler" function, which doesn't naturally fit an app with multiple REST routes and a streaming response; porting to it would mean re-architecting `routers/ocr.py`'s SSE endpoints, not just deploying them.
+
+The pieces worth understanding:
+
+- **`image = modal.Image.debian_slim(...)` chain** — builds the container step by step: `apt_install` for system libraries, `pip_install_from_requirements` for Python packages, `run_function(_download_model_weights)` to bake Pix2Text's model weights into the image at *build* time (so a cold start only pays the ~30s in-memory load, never a weights re-download over the network), then `run_commands(...)` to install the `tectonic` binary (no apt package for it), then `add_local_dir("api", ...)` to actually copy the application code in.
+- **`ignore=[".venv", "**/__pycache__", "*.pyc", "tests"]`** on `add_local_dir` — without this, a real deploy uploaded 4,214 files because it swept up the entire local Python virtual environment sitting inside `api/`. Nothing in the container ever imports from that folder (dependencies come from `pip_install_from_requirements`), so it's pure dead weight.
+- **No `gpu=` parameter on `@app.function(...)`** — the original plan was a T4 GPU, but a real deploy crashed on startup: Pix2Text's ONNX-based `LatexOCR` component detected a GPU and tried `CUDAExecutionProvider`, which needs the `onnxruntime-gpu` package instead of the plain CPU-only `onnxruntime` actually installed. Running with no GPU at all matches the exact configuration that already worked locally (no GPU on the dev machine either) — slower per page than a working GPU setup would be, but known-working today. Worth revisiting in M6 if CPU latency becomes a real problem once there's actual usage to measure.
+- **`scaledown_window=300`** — keep a warm container for 5 minutes after its last request, so a burst of back-to-back conversions doesn't re-pay the model-load cost on every single one. Scales fully to $0 after 5 idle minutes with nobody using it — the whole point of going serverless instead of a VM (cost analysis section 3.1).
+- **Tectonic's shared libraries** — its prebuilt binary isn't statically linked against everything it needs. Two separate real crashes traced this exactly: first `libGL.so.1: cannot open shared object file` (actually an OpenCV dependency pulled in by Pix2Text's layout module, fixed with `libgl1` + `libglib2.0-0`), then `libgraphite2.so.3: cannot open shared object file` (Tectonic's own text-shaping dependencies, fixed with `libgraphite2-3`, `libharfbuzz0b`, `libicu-dev`).
+- **Tectonic's GLIBC mismatch** — even after the shared-library fix above, a live PDF export crashed with `libc.so.6: version 'GLIBC_2.38' not found`. The official install script (`drop-sh.fullyjustified.net`) fetches Tectonic's GNU-target build, which is dynamically linked against a newer glibc than Modal's `debian_slim` base actually ships. Fixed by downloading Tectonic's **musl-target** release asset directly instead — a build Tectonic publishes specifically so the binary doesn't depend on the host's glibc version at all, sidestepping the mismatch entirely rather than chasing a matching base-image version.
+
+### `web/lib/apiBase.ts` — pointing the frontend at the deployed backend
+
+```typescript
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+```
+
+Every `fetch()` call in `UploadFlow.tsx` goes through `apiUrl(...)` instead of a hardcoded relative path. The `NEXT_PUBLIC_` prefix isn't optional styling — Next.js only inlines env vars with that exact prefix into the browser bundle at build time; without it, the value would only exist on the server and every client-side fetch would silently get `undefined`. Left unset, `API_BASE` falls back to `""`, which reproduces the old relative-path behavior from M0-M3 — so local dev without a `.env.local` still works.
 
 ---
 
@@ -162,9 +190,16 @@ Worth knowing these happened, not just that the code looks the way it does:
 - **`\fbox` and `\textcircled` break math-mode compilation** when their contents include math-only commands, because both force their argument into text/LR mode even inside math mode. Fixed with a `\boxed` substitution and a conditional unwrap.
 - **An OCR region with an unclosed brace crashed the entire PDF export**, not just that one region, because LaTeX keeps scanning for the matching `}` past `\end{document}` until the file physically ends. Fixed with a brace-balance check before export, swapping bad regions for a harmless comment instead of sending them to the compiler.
 - **Git operations on the OneDrive-synced folder fail from inside this sandbox** (`index.lock` permission errors) — not a code bug, but the reason every commit in this project has been run from your own local terminal instead of through me.
+- **(M4) `add_local_dir` uploaded the entire local `.venv`** (4,214 files) to Modal because nothing told it not to — fixed by adding an `ignore=` list.
+- **(M4) `import cv2` crashed with `libGL.so.1: cannot open shared object file`** during the Modal image build — OpenCV (pulled in indirectly by Pix2Text) expects OpenGL/GTK libraries that a minimal `debian_slim` image doesn't have — fixed with `libgl1` + `libglib2.0-0`.
+- **(M4) Every GPU container crashed on startup** with a CUDAExecutionProvider error — Pix2Text's ONNX runtime detected the attached T4 GPU and tried to use it, but only the CPU-only `onnxruntime` package was installed — fixed by removing the GPU request entirely, matching the CPU-only config that already worked locally.
+- **(M4) A live PDF export crashed with `libgraphite2.so.3: cannot open shared object file`** — Tectonic's binary dynamically links against Graphite2/HarfBuzz/ICU, absent from `debian_slim` — fixed by adding those three packages.
+- **(M4) A live PDF export then crashed with `libc.so.6: version 'GLIBC_2.38' not found`** — Tectonic's official install script fetches a GNU-target build linked against a newer glibc than Modal's base image ships — fixed by downloading Tectonic's musl-target release build directly instead, which doesn't depend on the host's glibc version at all.
 
 ---
 
-## What's not built yet (this is where M4 and beyond start)
+## What's not built yet (this is where M5 and beyond start)
 
-To be explicit about the boundary: there's no deployment configuration yet (no Dockerfile, no serverless function wrapper, no environment-based API URL — the frontend currently assumes the backend is reachable at a relative `/api/...` path), no enforcement of the 50-page free-tier cap or the $5/year paid tier from the cost analysis file (those are pricing decisions, not shipped code), no user accounts or history (M5), and no accuracy benchmarking or a Claude/Mathpix fallback (M6). `main.py`'s `lifespan` also still assumes a long-lived process — worth revisiting if M4 goes the serverless route from the cost analysis, since a cold start would re-pay that 30-second model load every time.
+M4 is done: the backend is live on Modal (`modal_app.py`), the frontend is live on Vercel with `NEXT_PUBLIC_API_URL` pointed at it, CORS is tightened to the real domain, and a real end-to-end upload/convert/export was tested successfully on the deployed URLs.
+
+Still not built: enforcement of the 20-page free cap or the one-time $5-for-1,000-pages pack from the cost analysis file (those are pricing decisions, not shipped code — there's no payment integration, no per-user page counter, no accounts at all yet), no user accounts or history/share (M5), confidence-based visual highlighting (M5), and no accuracy benchmarking or a Claude/Mathpix fallback (M6). `main.py`'s `lifespan` still assumes a long-lived process for the *local dev* case (`uvicorn main:app`), but on Modal this is now mitigated by `scaledown_window=300` keeping a container warm between requests rather than reloading the model from scratch constantly.
