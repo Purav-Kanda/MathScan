@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import UploadDropzone from "./UploadDropzone";
 import EditableLatexRegion from "./EditableLatexRegion";
 import { downloadBlob } from "@/lib/download";
+import { apiUrl } from "@/lib/apiBase";
 
 // These shapes mirror exactly what api/routers/ocr.py's SSE messages
 // contain -- {"page": n, "total": n, "result": {...}} per successful page,
@@ -87,7 +88,7 @@ export default function UploadFlow() {
     // vs Flow B (one or more images) -- both converge on the same result
     // shape, so everything below this point doesn't need to care which
     // path was used.
-    const endpoint = isSinglePdf ? "/api/ocr/pdf" : "/api/ocr/images";
+    const endpoint = apiUrl(isSinglePdf ? "/api/ocr/pdf" : "/api/ocr/images");
 
     // FormData is the browser's built-in way of building a multipart file
     // upload -- the same format an HTML <form> uses when it has a file
@@ -300,7 +301,7 @@ export default function UploadFlow() {
     const { exportPages, warnings } = buildExportPages();
     setExportWarnings(warnings);
     try {
-      const response = await fetch("/api/export/tex", {
+      const response = await fetch(apiUrl("/api/export/tex"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pages: exportPages }),
@@ -318,7 +319,7 @@ export default function UploadFlow() {
     const { exportPages, warnings } = buildExportPages();
     setExportWarnings(warnings);
     try {
-      const response = await fetch("/api/export/pdf", {
+      const response = await fetch(apiUrl("/api/export/pdf"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pages: exportPages }),

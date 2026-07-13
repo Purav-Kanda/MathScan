@@ -6,10 +6,12 @@ M0 proved Pix2Text could load and return LaTeX for one image
 /api/ocr/pdf and /api/ocr/images, both SSE-streamed (see routers/ocr.py).
 """
 
+import os
 from contextlib import asynccontextmanager
 from io import BytesIO
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
 import inference
@@ -31,6 +33,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MathScan Inference API", lifespan=lifespan)
+
+# WHY CORS is needed now, when it wasn't before: through M3, the frontend
+# fetched relative paths like /api/ocr/pdf, which only works when the
+# browser considers frontend and backend the "same origin" (e.g. both
+# served from localhost during dev, or proxied together). Once the backend
+# moves to its own Modal URL and the frontend lives on its own Vercel URL,
+# they're two different origins -- without CORS, the browser blocks the
+# frontend's fetch() calls by default as a security measure, regardless of
+# whether the backend would have allowed the request.
+#
+# WHY an env var instead of a hardcoded domain: the Vercel URL isn't known
+# until after the frontend is actually deployed (and preview deployments
+# get their own unique URLs too) -- ALLOWED_ORIGIN lets that be configured
+# per-environment instead of hardcoded here. Defaults to "*" (allow
+# anything) so local development and first deploys aren't blocked before
+# this is set; tighten this to the real frontend URL once it's known.
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[ALLOWED_ORIGIN],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(ocr_router)
 app.include_router(export_router)
 

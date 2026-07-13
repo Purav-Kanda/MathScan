@@ -12,7 +12,7 @@ MathScan's current pipeline (M0/M1, built and verified) uses Pix2Text-MFR, a sma
 
 The answer is cost, and it's a bigger gap than it might look at first. This file works out the actual numbers, using each provider's own published pricing.
 
-**The actual product decision (section 5): two tiers, both self-hosted Pix2Text, no Claude involved.** Free — 50 pages/month. Paid — $5/year, up to 500 pages/month. Simple on purpose: no per-page billing, no payment-processor overhead on tiny transactions, no second inference engine to maintain. Sections 4 and 4.4 keep the Claude-routing cost research in the file as background — it's what makes "no Claude tier" a deliberate choice with real numbers behind it, not a decision made without looking.
+**The actual product decision (section 5): two tiers, both self-hosted Pix2Text, no Claude involved.** Free — 20 pages/month. Paid — a one-time $5 pack for 1,000 pages, no expiration. Simple on purpose: no metered per-page billing, a transaction size big enough that payment-processor overhead doesn't dominate the math, no second inference engine to maintain. Sections 4 and 4.4 keep the Claude-routing cost research in the file as background — it's what makes "no Claude tier" a deliberate choice with real numbers behind it, not a decision made without looking.
 
 ---
 
@@ -129,24 +129,24 @@ A three-tier product (free Pix2Text-only → cheap hybrid "Polish" tier → full
 
 ## 5. Actual tier structure: two tiers, one engine, no Claude
 
-**Free — 50 pages/month, Pix2Text.** Rate-limited per IP as already built (SRS NFR-022, 60 requests/hour), plus a 50-page/month account cap.
+**Free — 20 pages/month, Pix2Text.** Rate-limited per IP as already built (SRS NFR-022, 60 requests/hour), plus a 20-page/month account cap. Deliberately tighter than an earlier draft's 50-page cap: the worked example in section 7 (a genuinely active student, ~48 pages/month) barely touched a 50-page cap, meaning most real users would never need to pay anything — good for goodwill, bad for ever finding out if anyone will actually pay. 20 pages/month (roughly one page every day and a half) is low enough that a regular user hits it almost every month, without being so low that an occasional/light user ever notices it.
 
-**Paid — $5/year, up to 500 pages/month, same Pix2Text engine.** Not a per-page charge, not a monthly subscription — one flat annual price. No Claude, no accuracy difference from the free tier, just 10x the monthly room. The 500-page figure is a soft target for now (enforce it the same simple way as the free cap); it isn't a hard technical limit that needs new infrastructure to exist.
+**Paid — a one-time $5 pack for 1,000 pages, same Pix2Text engine, no expiration.** Not a subscription, not metered per-page — buy once, the 1,000 pages sit on the account until used. No Claude, no accuracy difference from the free tier, just more room.
 
-**Why one flat annual price instead of metered billing:** the $1-per-1,000-pages idea from an earlier draft of this file ran into a real problem — a Stripe-style transaction fee (~2.9% + $0.30) eats roughly a third of a literal $1 charge, before any compute cost is even counted. A single $5/year charge pays that processor fee *once*, not every time someone tops up, and is a far simpler thing to build, market, and explain than metered pricing.
+**Why a bigger one-time pack instead of the earlier $1-per-1,000-pages or $5/year ideas:** a Stripe-style transaction fee (~2.9% + $0.30) eats roughly a third of a literal $1 charge, which is why per-page micropayments were ruled out earlier. A $5 charge only loses about 9% of the charge to the same fee (`0.029 × $5 + $0.30 ≈ $0.445`) — a $5 minimum is the practical threshold where payment overhead stops dominating the math.
 
-### 5.1 Is $5/year actually sustainable?
+### 5.1 Is the $5-for-1,000-pages pack actually sustainable?
 
-Using the serverless GPU rates from section 3.1 (Modal ~$0.0007/page, RunPod ~$0.00011/sec ≈ $0.0004/page) — Pix2Text is the only model being served, so these are the real relevant numbers now, not the Claude figures in section 4.
+Using the serverless GPU rates from section 3.1 (Modal ~$0.0007/page, RunPod ~$0.0004/page):
 
-$5/year is ~$0.4167/month in revenue. At the 500-page/month soft cap:
-
-| Platform | Cost at 500 pages/month | Monthly margin | Annual margin |
+| Platform | Cost per 1,000-page pack | Payment processor fee | Net profit per pack sold |
 |---|---|---|---|
-| Modal (~$0.0007/page) | $0.35 | $0.067 | ~$0.80 |
-| RunPod (~$0.0004/page) | $0.20 | $0.217 | ~$2.60 |
+| Modal | $0.70 | $0.445 | **~$3.86** |
+| RunPod | $0.40 | $0.445 | **~$4.16** |
 
-Thin on Modal, healthy on RunPod — but positive either way, *even if a paying user maxes out the cap every single month of the year.* Realistically most paying users won't hit 500 pages/month consistently (the worked example in section 7 shows a genuinely active student uses far less), so actual margins per paying user will usually be better than this worst-case table. The breakeven point — where a user's usage exactly wipes out the $5 — is ~595 pages/month on Modal or ~1,042 pages/month on RunPod; someone would have to blow well past the 500-page soft cap, consistently, for a full year, to actually lose money.
+Roughly 77-83% margin per pack sold, either platform — a clear improvement over the earlier $5/year model's thin Modal-rate margin, because a bigger one-time charge amortizes the fixed $0.30 payment fee far better than a small recurring one did.
+
+**The real trade-off, not a cost problem but a revenue-shape one:** because the pack doesn't expire, it can last a paying user a very long time. Take the section 7 worked-example student (~48 pages/month): against a 20-page free cap, they'd overflow by about 28 pages/month — meaning one 1,000-page pack lasts roughly 35 months (~3 years) before they'd need another. So this pricing is well-suited to *getting someone to buy at all* (a single $5 purchase is an easy yes, and the lower free cap means more real users actually hit the wall and face that choice), but it does **not** produce recurring revenue the way a subscription would — expect "one small purchase, ever" from most paying users, not renewing income. Whether that's the right shape depends on the goal: proving people will pay anything (this does that well) versus building sustained revenue (a subscription does that better, at the cost of being a bigger ask). A future option if repeat revenue matters more later: make the 1,000-page allotment refill monthly/annually instead of banking indefinitely — same price, different shape.
 
 ### 5.2 What this gives up, on purpose
 
@@ -161,8 +161,8 @@ No Claude-level accuracy option, at least for now — a user with very messy han
 - Actual output length (and therefore output token cost) depends heavily on how much math is actually on a page — a page with ten equations costs more in output tokens than a page with one.
 - Anthropic's pricing includes a batch-processing discount (50% off) for non-real-time workloads; not used in the estimates above since users expect a live result, not a delayed batch response.
 - The hybrid (section 4.4) token estimates assume ~150 tokens of raw LaTeX per page; a page with many equations produces more text and costs slightly more than shown, though still far less than the image-token cost it's being compared against.
-- The $5/year sustainability table (5.1) assumes a paying user's usage is served entirely by serverless compute at the rates in section 3.1 — if usage ever grows enough to justify a dedicated VM instead (past the ~50,000-60,000 pages/month crossover in 3.1), the actual per-page cost for paid users would be even lower than shown here, not higher.
-- The 500-page/month soft cap on the paid tier isn't enforced by any code yet — it's a pricing assumption to build toward, not a limit that exists today.
+- The pack sustainability table (5.1) assumes a paying user's usage is served entirely by serverless compute at the rates in section 3.1 — if usage ever grows enough to justify a dedicated VM instead (past the ~50,000-60,000 pages/month crossover in 3.1), the actual per-page cost for paid users would be even lower than shown here, not higher.
+- The 20-page/month free cap and the $5-for-1,000-pages pack aren't enforced by any code yet — they're pricing decisions to build toward, not limits that exist today.
 
 ---
 
@@ -170,22 +170,24 @@ No Claude-level accuracy option, at least for now — a user with very messy han
 
 A concrete run of the numbers above, for a single typical user: **12 pages/week of homework, over a 4-month term.**
 
-**Assumptions, stated plainly:** 4 months modeled as a 16-week semester (192 pages total, ~48 pages/month average) — a common school-term length, but real semesters run anywhere from ~14-18 weeks, so treat 192 as a representative number, not an exact one. 48 pages/month is just barely under the Free tier's 50-page cap (section 5) — this student is close to the realistic ceiling of what "free" comfortably covers, not a token light user.
+**Assumptions, stated plainly:** 4 months modeled as a 16-week semester (192 pages total, ~48 pages/month average) — a common school-term length, but real semesters run anywhere from ~14-18 weeks, so treat 192 as a representative number, not an exact one.
 
-### 7.1 What it actually costs (Free tier, as built)
+### 7.1 What happens under the actual caps (20 free/month, $5-for-1,000-page pack)
 
-| | Per month | Over the 4-month term |
-|---|---|---|
-| What the student pays | $0 | $0 |
-| Marginal infra cost to us (serverless, section 3.1) | ~48 pages × $0.0004-0.0007 ≈ $0.02-$0.03 | ~$0.08-$0.13 |
+At 20 free pages/month, this student's free allowance covers 80 of their 192 pages over the term (20 × 4 months) — the remaining 112 pages need to come from a purchased pack. One $5 pack (1,000 pages) covers that overage many times over.
 
-This is the entire point of the free tier: a genuinely active student (not a token light user — 48 of the 50-page cap) costs us pennies for the whole term, on serverless, and costs them nothing.
+| | This student, over the 4-month term |
+|---|---|
+| What the student pays | $5 (one pack, covers the 112-page overage with 888 pages left banked) |
+| Total infra cost to us (all 192 pages, serverless, section 3.1) | ~$0.08-$0.13 |
+| Payment processor fee on the $5 charge | ~$0.445 |
+| **Net profit from this one student, this one term** | **~$4.42-$4.47** |
 
-### 7.2 What the student would have paid without a free tier
+This is exactly the scenario the lower free cap was built for (section 5): a genuinely typical, moderately active student — not an edge case — converts to a paying customer within their very first term, because 20 pages/month is tight enough that real usage crosses it.
 
-If there were no free option at all, this student would need the $5/year paid tier (section 5) just to use the product — their usage fits trivially inside its 500-page/month cap.
+### 7.2 How far does that one $5 purchase actually go?
 
-**Money the free tier saves this student: the full $5/year fee**, since 48 pages/month would otherwise force them onto the paid plan even though they're using less than a tenth of what it allows. That's a small number in absolute terms — the whole point of a $5/year price is that it's small — but the free tier is what makes the product genuinely free for the large majority of students who never need more than 50 pages/month.
+The 888 pages left over after this term roll forward (the pack doesn't expire). At this student's overage rate (~28 pages/month beyond the free cap), that's roughly **31-32 more months** — over two and a half years — before they'd need to buy a second pack. This is the trade-off flagged in section 5.1 in concrete numbers: the lower cap successfully turns a typical user into a paying one, but that one purchase then covers them for a very long time. Good for "does anyone pay at all," not a source of recurring revenue from this same student any time soon.
 
 ### 7.3 What using Claude instead would have cost (hypothetical — not the actual design)
 
@@ -199,11 +201,11 @@ Section 4's Claude research isn't part of the shipped product, but it's worth ke
 | Claude Sonnet 5 (direct image, intro pricing) | **~$2.92** |
 | Claude Opus 4.8 (direct image) | **~$7.28** |
 
-That's the real reason a $5/year, Pix2Text-only product is viable at all: even the *cheapest* Claude option (~$0.56/semester) already costs more than a whole year of this student's Free-tier usage on serverless (~$0.08-$0.13/semester). Routing to Claude for a typical user would have cost more than what we're charging paying users for a full year.
+Even the *cheapest* Claude option (~$0.56/semester) costs more than this whole student's actual infra cost on Pix2Text (~$0.08-$0.13/semester) — the $5 they paid isn't recovering a Claude-sized bill, it's pure margin on top of an already-tiny cost. That's the real case for staying Pix2Text-only (section 5.2): the paid tier doesn't need to charge much to be very profitable, because the thing it's charging for costs almost nothing to provide.
 
 ### 7.4 The honest takeaway
 
-For a typical active student, Free costs us pennies and costs them nothing; a heavier user pays $5/year for 10x the room, and the economics hold even in the worst case (section 5.1). The trade this design makes on purpose: no Claude-level accuracy option for the minority of users whose handwriting Pix2Text genuinely struggles with. That's a real gap, not a hidden one — and section 4's numbers are sitting right there if it's ever worth closing.
+Under the new caps, a typical active student pays $5 once and nets roughly $4.45 in profit that same term — a real, concrete conversion, not a hypothetical one. The honest catch, from 7.2: that same $5 then likely covers this student for years, so the model is better at proving people will pay than at generating repeat revenue from any one user. The other trade this design makes on purpose (unchanged from before): no Claude-level accuracy option for the minority of users whose handwriting Pix2Text genuinely struggles with — section 4's numbers are sitting right there if that's ever worth closing.
 
 ---
 
