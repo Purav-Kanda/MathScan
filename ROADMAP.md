@@ -19,3 +19,12 @@ Each milestone starts with a short concept lesson (the "why" behind the design) 
 - Code lives in this repo; you run/test locally in VS Code, I write files directly here.
 - Every session: mini-lesson on the concept → code → explanation of key design choices baked into that code.
 - Task list tracks milestone progress across our sessions.
+
+## Functionality to-dos (app value + resume signal)
+
+Not new milestones, slotted into the existing ones — added after a resume-focused brainstorm:
+
+- **CI/CD** — GitHub Actions workflow running `pytest` on every push. Not in the original scope; cheap to add (~1 session), high resume signal since most student projects skip it entirely.
+- **Accuracy evaluation harness (M6)** — ~30-50 real handwritten photos with known-correct LaTeX, compute character error rate / exact-match rate. Turns "built an OCR app" into a quantified resume line.
+- **Confidence-based Claude fallback (M6, ties into the hybrid cost analysis in section 4.4)** — route low-confidence pages to Claude instead of trusting Pix2Text blindly. Real multi-model routing, and directly fixes garbled output on messy handwriting.
+- **Auth + history (M5)** — sessions, DB schema, protected routes. Standard full-stack signal, already scoped as part of M5.
