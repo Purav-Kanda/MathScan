@@ -46,10 +46,12 @@ app = FastAPI(title="MathScan Inference API", lifespan=lifespan)
 # WHY an env var instead of a hardcoded domain: the Vercel URL isn't known
 # until after the frontend is actually deployed (and preview deployments
 # get their own unique URLs too) -- ALLOWED_ORIGIN lets that be configured
-# per-environment instead of hardcoded here. Defaults to "*" (allow
-# anything) so local development and first deploys aren't blocked before
-# this is set; tighten this to the real frontend URL once it's known.
-ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
+# per-environment instead of hardcoded here. The frontend is now live at
+# math-scan-lake.vercel.app, so that's the default -- "*" was a launch
+# placeholder, not something to leave in place once the real domain is
+# known. Still overridable via the env var (e.g. a future preview
+# deployment with its own unique URL) without touching this file again.
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "https://math-scan-lake.vercel.app")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[ALLOWED_ORIGIN],

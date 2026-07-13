@@ -72,16 +72,43 @@ image = (
         # close to universally).
         "libgl1",
         "libglib2.0-0",
+        # WHY these three: Tectonic's prebuilt binary dynamically links
+        # against Graphite2 (shaping unusual scripts), HarfBuzz (general
+        # text shaping), and ICU (Unicode data) -- none of which are
+        # present on a minimal debian_slim image by default. A real PDF
+        # export crashed with "libgraphite2.so.3: cannot open shared
+        # object file" the first time this ran on Modal, exactly the same
+        # class of issue as the opencv libraries above, just for a
+        # different binary. libicu-dev (rather than a version-numbered
+        # runtime-only package like libicu72) is used deliberately: the
+        # exact ICU package name changes across Debian releases, but
+        # libicu-dev always pulls in whatever the correct runtime .so
+        # package is as a dependency, so this doesn't need updating if the
+        # base image's Debian version ever changes.
+        "libgraphite2-3",
+        "libharfbuzz0b",
+        "libicu-dev",
     )
     .pip_install_from_requirements("api/requirements.txt")
     .run_function(_download_model_weights)
     # Tectonic ships as one self-contained binary with no apt package on
-    # Debian -- fetched via its official install script, the direct Linux
-    # equivalent of the PowerShell installer used locally on Windows.
+    # Debian. The official install script (drop-sh.fullyjustified.net) was
+    # used first, but it fetches the GNU-target build, which is dynamically
+    # linked against glibc and requires a newer glibc (GLIBC_2.38/2.39) than
+    # Modal's debian_slim base actually has -- a real crash on a live PDF
+    # export: "libc.so.6: version `GLIBC_2.38' not found". Tectonic also
+    # publishes a musl-target "semistatic" build specifically so the binary
+    # doesn't depend on the host's glibc version at all -- downloading that
+    # release asset directly (rather than running the auto-detecting
+    # install script) sidesteps the glibc mismatch entirely instead of
+    # chasing a matching base-image version.
     .run_commands(
-        "curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh",
-        "mv tectonic /usr/local/bin/tectonic",
+        "curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/tectonic.tar.gz "
+        "https://github.com/tectonic-typesetting/tectonic/releases/download/"
+        "tectonic%400.16.9/tectonic-0.16.9-x86_64-unknown-linux-musl.tar.gz",
+        "tar -xzf /tmp/tectonic.tar.gz -C /usr/local/bin",
         "chmod +x /usr/local/bin/tectonic",
+        "rm /tmp/tectonic.tar.gz",
     )
     # Copies the actual application code (main.py, inference.py,
     # pdf_preprocessor.py, routers/) into the image. Modal 1.0+ requires
