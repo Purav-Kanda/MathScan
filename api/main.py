@@ -17,6 +17,7 @@ from PIL import Image
 import inference
 from routers.ocr import router as ocr_router
 from routers.export import router as export_router
+from routers.share import router as share_router
 
 
 @asynccontextmanager
@@ -61,6 +62,7 @@ app.add_middleware(
 
 app.include_router(ocr_router)
 app.include_router(export_router)
+app.include_router(share_router)
 
 
 @app.get("/api/health")

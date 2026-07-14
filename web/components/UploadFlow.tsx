@@ -5,27 +5,8 @@ import UploadDropzone from "./UploadDropzone";
 import EditableLatexRegion from "./EditableLatexRegion";
 import { downloadBlob } from "@/lib/download";
 import { apiUrl } from "@/lib/apiBase";
-
-// These shapes mirror exactly what api/routers/ocr.py's SSE messages
-// contain -- {"page": n, "total": n, "result": {...}} per successful page,
-// or {"page": n, "total": n, "error": "..."} for a per-page failure, or
-// {"error": "..."} with no "page" key for a whole-request failure (like an
-// encrypted PDF). Keeping frontend types matched to the real backend
-// response, not guessed, avoids exactly the kind of bug we hit in
-// inference.py earlier.
-interface Region {
-  latex: string;
-  type: string;
-  bbox: number[][] | null;
-  confidence: number | null;
-}
-
-interface PageResult {
-  page: number;
-  total: number;
-  result?: { regions: Region[]; confidence_mean: number | null };
-  error?: string;
-}
+import type { PageResult } from "@/lib/types";
+import { getHistory, saveToHistory, deleteHistoryEntry, clearHistory, type HistoryEntry } from "@/lib/history";
 
 type Status = "idle" | "uploading" | "done" | "error";
 
@@ -51,6 +32,14 @@ export default function UploadFlow() {
   // already well-lit, so this should be something the user opts into for
   // a specific bad scan, not a silent default applied to every upload.
   const [enhanceContrast, setEnhanceContrast] = useState(false);
+  // M5: browser-only history (see lib/history.ts for why this is
+  // localStorage, not an account system) + share links.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareCopyLabel, setShareCopyLabel] = useState("Copy link");
 
   function regionKey(page: number, index: number) {
     return `${page}-${index}`;
@@ -74,6 +63,109 @@ export default function UploadFlow() {
   useEffect(() => {
     return () => thumbnailUrls.forEach((url) => URL.revokeObjectURL(url));
   }, [thumbnailUrls]);
+
+  // WHY save-to-history lives in an effect keyed only on `status`, not
+  // called directly inside handleConvert: handleConvert has two separate
+  // places that reach "done" (the normal streaming-complete path, and the
+  // AbortError/cancel path) -- an effect that fires once per transition
+  // into "done" covers both without duplicating the save call. It only
+  // depends on `status` on purpose: `pages`/`editedLatex` change further as
+  // the user edits regions afterward, and re-running this on every one of
+  // those edits would keep creating new history entries instead of one per
+  // completed conversion. This does mean a history entry captures results
+  // as they stood right when the job finished, not later edits -- a
+  // deliberate simplicity tradeoff, not an oversight.
+  useEffect(() => {
+    if (status !== "done") return;
+    const successfulPages = pages.filter((p) => p.result);
+    if (successfulPages.length === 0) return; // nothing worth saving
+    const label =
+      files.length === 1 ? files[0].name : `${files.length} files (${successfulPages.length} pages)`;
+    saveToHistory({ label, pages, editedLatex });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  function refreshHistory() {
+    setHistoryEntries(getHistory());
+  }
+
+  function toggleHistory() {
+    if (!historyOpen) refreshHistory();
+    setHistoryOpen((open) => !open);
+  }
+
+  // Restores a past conversion's results into the viewer without touching
+  // the backend at all -- everything needed (regions, edited text) was
+  // already saved into localStorage at completion time.
+  function loadFromHistory(entry: HistoryEntry) {
+    setFiles([]);
+    setPages(entry.pages);
+    setEditedLatex(entry.editedLatex);
+    setStatus("done");
+    setErrorMessage(null);
+    setWasCancelled(false);
+    setShareUrl(null);
+    setShareError(null);
+    setHistoryOpen(false);
+  }
+
+  function handleDeleteHistoryEntry(id: string) {
+    deleteHistoryEntry(id);
+    refreshHistory();
+  }
+
+  function handleClearHistory() {
+    clearHistory();
+    refreshHistory();
+  }
+
+  // WHY this sends {page, regions} (the real per-region data), not the
+  // flattened export text buildExportPages() produces below: a share link
+  // should open into the same kind of viewer this app already shows --
+  // editable regions with confidence badges and a live preview -- not a
+  // single wall of compiled document text.
+  async function handleShare() {
+    setShareError(null);
+    setShareUrl(null);
+    setIsSharing(true);
+    const sharePages = pages
+      .slice()
+      .sort((a, b) => a.page - b.page)
+      .filter((p) => p.result)
+      .map((p) => ({
+        page: p.page,
+        regions: p.result!.regions.map((region, i) => ({
+          latex: editedLatex[regionKey(p.page, i)] ?? region.latex,
+          type: region.type,
+          confidence: region.confidence,
+        })),
+      }));
+    try {
+      const response = await fetch(apiUrl("/api/share"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pages: sharePages }),
+      });
+      if (!response.ok) throw new Error("Could not create share link");
+      const data = await response.json();
+      setShareUrl(`${window.location.origin}/share/${data.id}`);
+    } catch (err) {
+      setShareError(err instanceof Error ? err.message : "Could not create share link");
+    } finally {
+      setIsSharing(false);
+    }
+  }
+
+  async function handleCopyShareUrl() {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopyLabel("Copied");
+    } catch {
+      setShareCopyLabel("Failed");
+    }
+    setTimeout(() => setShareCopyLabel("Copy link"), 1500);
+  }
 
   async function handleConvert() {
     if (files.length === 0) return;
@@ -185,6 +277,8 @@ export default function UploadFlow() {
     setWasCancelled(false);
     setExportWarnings([]);
     setExportError(null);
+    setShareUrl(null);
+    setShareError(null);
   }
 
   // WHY wrapping matters: Pix2Text's region.latex is bare math source, like
@@ -345,6 +439,62 @@ export default function UploadFlow() {
 
   return (
     <div className="w-full max-w-4xl">
+      {status === "idle" && (
+        <div className="mx-auto mb-2 flex max-w-xl justify-end">
+          <button
+            onClick={toggleHistory}
+            className="rounded-md px-2 py-1 text-xs font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700"
+          >
+            {historyOpen ? "Hide history" : "History"}
+          </button>
+        </div>
+      )}
+
+      {/* M5: browser-only history -- see lib/history.ts for why this is
+          localStorage rather than a backend account system. Only shown in
+          the idle state, same reasoning as the History button above. */}
+      {status === "idle" && historyOpen && (
+        <div className="mx-auto mb-4 max-w-xl rounded-xl border border-neutral-200 p-3">
+          {historyEntries.length === 0 ? (
+            <p className="py-2 text-center text-sm text-neutral-400">
+              No past conversions on this device yet.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-y divide-neutral-100">
+                {historyEntries.map((entry) => (
+                  <li key={entry.id} className="flex items-center justify-between gap-2 py-2">
+                    <button
+                      onClick={() => loadFromHistory(entry)}
+                      className="min-w-0 flex-1 truncate text-left text-sm text-neutral-700 hover:text-accent-700"
+                      title={entry.label}
+                    >
+                      <span className="truncate">{entry.label}</span>
+                      <span className="ml-2 text-xs text-neutral-400">
+                        {new Date(entry.createdAt).toLocaleDateString()}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteHistoryEntry(entry.id)}
+                      className="shrink-0 rounded-md px-2 py-1 text-xs text-neutral-400 hover:bg-red-50 hover:text-red-600"
+                      title="Delete this entry"
+                    >
+                      Delete
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={handleClearHistory}
+                className="mt-2 text-xs text-neutral-400 hover:text-red-600"
+              >
+                Clear all history
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {status === "idle" || status === "uploading" ? (
         <div className="mx-auto max-w-xl">
           <UploadDropzone files={files} onFilesChange={setFiles} disabled={isUploading} />
@@ -520,6 +670,17 @@ export default function UploadFlow() {
             >
               {isExportingPdf ? "Compiling PDF..." : "Download PDF"}
             </button>
+            {/* M5: share link -- unlike history (this device only), a share
+                link is what lets someone else actually view this result;
+                see api/routers/share.py for why that needs a real backend
+                store instead of localStorage. */}
+            <button
+              onClick={handleShare}
+              disabled={isSharing}
+              className="rounded-lg border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isSharing ? "Creating link..." : "Share"}
+            </button>
             <button
               onClick={handleReset}
               className="rounded-lg border border-neutral-300 px-4 py-2 text-sm text-neutral-600 hover:bg-neutral-50"
@@ -527,6 +688,23 @@ export default function UploadFlow() {
               Convert another file
             </button>
           </div>
+
+          {shareError && (
+            <p className="max-w-xl rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+              {shareError}
+            </p>
+          )}
+          {shareUrl && (
+            <div className="flex max-w-xl items-center gap-2 rounded-lg border border-neutral-200 px-3 py-2 text-sm">
+              <span className="truncate text-neutral-600">{shareUrl}</span>
+              <button
+                onClick={handleCopyShareUrl}
+                className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-accent-700 hover:bg-accent-50"
+              >
+                {shareCopyLabel}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
