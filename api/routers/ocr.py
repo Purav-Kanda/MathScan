@@ -76,7 +76,14 @@ async def ocr_pdf(file: UploadFile = File(...), enhance_contrast: bool = Form(Fa
                 # thread so the loop keeps serving other requests. This is
                 # the "async-dispatches to inference_service" step in SDD
                 # Flow A.
-                result = await asyncio.to_thread(recognize_page, image, enhance_contrast)
+                # try_fallback=True: the live app opts into the PaddleOCR
+                # fallback (inference.py's recognize_page docstring explains
+                # why it defaults to False -- CI/tests don't have PaddleOCR
+                # installed, on purpose). asyncio.to_thread forwards kwargs
+                # straight through to recognize_page, same as *args.
+                result = await asyncio.to_thread(
+                    recognize_page, image, apply_contrast=enhance_contrast, try_fallback=True
+                )
                 yield _sse({"page": page_num, "total": total, "result": result})
         finally:
             # FR-050: delete uploaded content immediately after inference,
@@ -140,7 +147,14 @@ async def ocr_images(files: list[UploadFile] = File(...), enhance_contrast: bool
                     yield _sse({"page": page_num, "total": total, "error": error})
                     continue
                 image = Image.open(page_path).convert("RGB")
-                result = await asyncio.to_thread(recognize_page, image, enhance_contrast)
+                # try_fallback=True: the live app opts into the PaddleOCR
+                # fallback (inference.py's recognize_page docstring explains
+                # why it defaults to False -- CI/tests don't have PaddleOCR
+                # installed, on purpose). asyncio.to_thread forwards kwargs
+                # straight through to recognize_page, same as *args.
+                result = await asyncio.to_thread(
+                    recognize_page, image, apply_contrast=enhance_contrast, try_fallback=True
+                )
                 yield _sse({"page": page_num, "total": total, "result": result})
         finally:
             shutil.rmtree(job_dir, ignore_errors=True)

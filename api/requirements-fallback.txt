@@ -1,0 +1,24 @@
+# WHY this is a SEPARATE file from requirements.txt, not merged into it:
+# these two packages (~100MB+ combined, plus several hundred MB of model
+# weights downloaded on first use) are only needed by inference.py's
+# PaddleOCR fallback (recognize_page's try_fallback parameter) -- the CI
+# workflow (.github/workflows/api-tests.yml) never exercises real PaddleOCR
+# at all (api/tests/test_inference.py mocks the fallback via monkeypatch,
+# and try_fallback defaults to False everywhere tests call recognize_page).
+# Keeping these out of requirements.txt keeps CI installs fast and keeps
+# "what does the live app actually need to run" separate from "what does
+# this one opt-in accuracy feature need." api/modal_app.py installs BOTH
+# files, since the live deployed app does need the real fallback.
+#
+# WHY pinned to these exact versions, not the latest: paddlepaddle 3.3.x
+# has a confirmed regression breaking CPU inference on Windows (PIR/oneDNN
+# NotImplementedError, PaddlePaddle/Paddle#77340) -- 3.2.2 is the version
+# that was actually tested and confirmed working (85% confidence, correct
+# output) against real handwriting in this project. paddleocr==3.7.0 is
+# what was actually installed and tested alongside it.
+paddlepaddle==3.2.2
+paddleocr==3.7.0
+# NOTE: wordninja (used by inference.py's _fix_missing_spaces() to clean up
+# PaddleOCR's output) lives in the main requirements.txt, not here -- it's
+# lightweight enough to be part of the lean/CI-tested dependency set, see
+# that file's comment.

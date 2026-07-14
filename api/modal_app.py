@@ -46,6 +46,19 @@ def _download_model_weights():
     Pix2Text.from_config()
 
 
+def _download_paddleocr_weights():
+    # Same reasoning as _download_model_weights above, for the PaddleOCR
+    # fallback (inference.py's recognize_page `try_fallback` parameter):
+    # PaddleOCR downloads several hundred MB of model files on first use
+    # (text detection, recognition, and orientation models) -- baking that
+    # into the image here means a cold start that actually needs the
+    # fallback only pays real inference time, not a first-use download on
+    # top of it.
+    from paddleocr import PaddleOCR
+
+    PaddleOCR(use_textline_orientation=True, lang="en")
+
+
 # WHY debian_slim + explicit apt/pip installs, not a pre-built ML image:
 # keeps the container image matched exactly to what's in requirements.txt
 # and what was verified locally -- no surprise version drift from an
@@ -88,9 +101,43 @@ image = (
         "libgraphite2-3",
         "libharfbuzz0b",
         "libicu-dev",
+        # libgomp1: paddlepaddle's compute kernels are OpenMP-parallelized
+        # and dynamically link against GNU OpenMP's runtime -- a real,
+        # commonly-documented requirement for running paddlepaddle on a
+        # minimal Debian image, added proactively here rather than waiting
+        # to hit the missing-.so crash the way opencv/Tectonic's libraries
+        # were discovered earlier in this file. Flagged honestly: this is
+        # an informed guess based on paddlepaddle's known dependencies, not
+        # something confirmed against an actual Modal deploy yet -- if the
+        # first real deploy with the fallback still crashes on a missing
+        # shared library, that's the next thing to check.
+        "libgomp1",
     )
     .pip_install_from_requirements("api/requirements.txt")
+    # WHY a separate pip_install_from_requirements call for the fallback
+    # deps, not just adding them to requirements.txt: see
+    # api/requirements-fallback.txt's own docstring-equivalent comment --
+    # keeps CI's install lean (it never needs real PaddleOCR, only a
+    # mocked one) while the actual deployed image still gets everything
+    # the live fallback needs.
+    .pip_install_from_requirements("api/requirements-fallback.txt")
+    # WHY this env var, set on the image itself (not just inside one
+    # function): a real deploy hung indefinitely -- confirmed by retrying
+    # and hitting the exact same stall point twice -- right after Pix2Text's
+    # weights finished downloading, before PaddleOCR's weights ever started.
+    # PaddleX (PaddleOCR's underlying inference engine) runs a "checking
+    # connectivity to the model hosters" step before every download (seen
+    # directly during local testing), and that check itself can hang
+    # depending on network reachability from wherever it's running --
+    # Modal's build network reaching whatever server PaddleX pings evidently
+    # doesn't behave the same way local testing did. Setting this on the
+    # image (not just inside _download_paddleocr_weights) means it also
+    # applies at real request time, not just during the build -- if a
+    # container somehow triggers a fresh PaddleOCR load later, it shouldn't
+    # hang the same way.
+    .env({"PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True"})
     .run_function(_download_model_weights)
+    .run_function(_download_paddleocr_weights)
     # Tectonic ships as one self-contained binary with no apt package on
     # Debian. The official install script (drop-sh.fullyjustified.net) was
     # used first, but it fetches the GNU-target build, which is dynamically
