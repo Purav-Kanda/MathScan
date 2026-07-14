@@ -1,0 +1,51 @@
+name: API tests
+
+# WHY this exists: the api/tests/ suite (9 tests as of this workflow being
+# added) has only ever been run manually, locally, by whoever's working on
+# the repo -- nothing catches a broken change before it's merged. This runs
+# the same suite automatically on every push and PR, matching how the code
+# is actually verified locally (`pytest`, run from api/).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11" # matches api/modal_app.py's
+          # modal.Image.debian_slim(python_version="3.11") -- keeping the
+          # CI Python version and the deployed one in sync avoids "works in
+          # CI, breaks on Modal" version-drift surprises.
+          cache: "pip"
+          cache-dependency-path: api/requirements.txt
+
+      # WHY these apt packages, not just `pip install -r requirements.txt`:
+      # test_pdf_preprocessor.py is a real integration test that calls the
+      # actual Poppler binaries (pdftoppm/pdfinfo), not a mocked version --
+      # ubuntu-latest runners don't ship Poppler by default. libgl1 +
+      # libglib2.0-0 are needed for the same reason they're in
+      # api/modal_app.py's image: `import inference` pulls in pix2text,
+      # which pulls in opencv-python, which fails at import time with
+      # "libGL.so.1: cannot open shared object file" without them -- the
+      # exact same real error hit building the Modal image, not a guess.
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils libgl1 libglib2.0-0
+
+      - name: Install Python dependencies
+        run: pip install -r api/requirements.txt
+
+      # WHY only /api/export/tex is exercised here, not /api/export/pdf:
+      # matches api/tests/test_export.py's own documented scope -- PDF
+      # export needs a real `tectonic` binary, which makes it an
+      # integration concern outside what every push should depend on, not
+      # something this workflow needs to install.
+      - name: Run tests
+        run: pytest
+        working-directory: api
