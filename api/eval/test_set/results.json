@@ -1,0 +1,37 @@
+{
+  "mean_accuracy": 0.32470742473800873,
+  "mean_word_overlap_recall": 0.5534855905642423,
+  "target": 0.8,
+  "passed": false,
+  "sample_size": 3,
+  "failed_images": [],
+  "try_fallback": true,
+  "apply_contrast": false,
+  "resized_shape": 768,
+  "per_image": [
+    {
+      "filename": "politics_p15.jpg",
+      "accuracy": 0.3039867109634552,
+      "word_overlap_recall": 0.42424242424242425,
+      "confidence_mean": 0.8538286196879852,
+      "predicted_text": "G77 \u2192 77 states in the South\n\n\u2193\n\nvote for\n\na\n\nCreate\n\nmore equitable\n\ninteinatihal\n\norder\n\nnew\n\nhelps\n\neconomic\n\ni\n\nwhere\n\nregulate\n\nto\n\nsteady\n\nfront materials\n\nexpert prices\n\nStaggered\n\nboom.\n\nprevent\n\nand\n\neconomic\n\nhappen\n\nnot\n\nDid\n\nfinancial\n\n1980s\n\n10\n\ndie\n\ndebt\n\nglobal nah + goal all lined\n\n2 male some state\n\n+eeainstfrld\n\nre at ep are in say of h word by ski g\n\nother states poor\n\n[YOU\n\nnorth",
+      "expected_text": "G77 -> 77 states in the South\nCreate a new international economic order where it helps to regulate raw materials export prices\nvote for more equitable global economic structure\nprevent a staggered economic boom and bust, keeps it steady\nDid not happen due to financial debt in 1980s\n\nDependency Theory -> cause of underdevelopment comes from the outside\nglobal north + global south linked\n+ Creates wealth in some part of the world\n+ Creates poverty in some part of the world\nmake some states rich by making other states poor\nGlobal capitalism suck wealth from the earth and deposit to the global north"
+    },
+    {
+      "filename": "calculus_p15.jpg",
+      "accuracy": 0.23646209386281591,
+      "word_overlap_recall": 0.43846153846153846,
+      "confidence_mean": 0.8448399087867221,
+      "predicted_text": "Example 3\n\n-Diverges\n\n00\n\n2\n\n\u03c11\n\nnot\n\ndx\n\ndx +\n\ndx\n\n=\n\n1\n\n\u221ax\n\nx2\n\nx\n\nUo\n\nUo\n\nJ\n\n\u2234 diverges\n\n1<1\n\n\u03c1\n\n2\n\nC1\n\n\u03c1'\n\ndn : him\n\ndx = lm\n\n2\u221ax\n\n1/2\n\nt>0\n\nUo\n\n\u03c0\n\nx2\n\nt>0+}\n\nIt\n\nUt\n\nhim\n\n251\n\n-27\n\n7\n\n0\n\nt>0^+}\n\n2\n\n=\n\nCompanion test\n\nnot\n\ndx\n\n1.\n\n1+e^{+}\n\nx\n\nAlways +ve\n\n1+e\n\n>1\n\nx\n\nx\n\ng(x)\n\n\u2193\n\n(x)\n\nno0\n\n8\n\n1+e^{}\n\n-x\n\ndx\n\n7\n\n1\n\ndx\n\nx\n\nx\n\n4\n\ndiverges\n\n8\n\nalso\n\nTest Cc\u00b7T)\n\ncomparison",
+      "expected_text": "Example 3\n\\int_0^\\infty \\frac{1}{\\sqrt{x}} dx = \\int_0^1 \\frac{1}{x^{1/2}} dx + \\int_1^\\infty \\frac{1}{x^{1/2}} dx\nDiverges\n\\rho = \\frac{1}{2} < 1 \\therefore diverges\n\n\\int_0^1 \\frac{1}{x^{1/2}} dx = \\lim_{t \\to 0^+} \\int_t^1 \\frac{1}{x^{1/2}} dx = \\lim_{t \\to 0^+} 2\\sqrt{x} \\Big|_t^1\n= \\lim_{t \\to 0^+} 2\\sqrt{1} - 2\\sqrt{t} \\to 0\n= 2\n\nComparison test\n1. \\int_1^\\infty \\frac{1+e^{-x}}{x} dx\nAlways +ve\n\\frac{1+e^{-x}}{x} > \\frac{1}{x}\nf(x)   g(x)\n\\int_1^\\infty \\frac{1+e^{-x}}{x} dx > \\int_1^\\infty \\frac{1}{x} dx\nalso diverges by comparison test (C.T)"
+    },
+    {
+      "filename": "econ_p15.jpg",
+      "accuracy": 0.4336734693877551,
+      "word_overlap_recall": 0.797752808988764,
+      "confidence_mean": 0.8729607065518697,
+      "predicted_text": "Tutorial Questions\n\nPrice \\$)\n\nEves 6\n\nRED=\n\n2\n\n\u2460=240-4P\n\nPER=1\n\na) 80\n\nb)\n\n240-49=0\n\n\u2192Oly.D\n\nPER:0\n\nAP=240\n\nP=\\$60\n\nC)\n\n0d  240- 4(40)\n\n\\$ 30\n\nd) Elasticity = slope\n\nNice\n\nod\n\n-80\n\nAD\n\n2\n\nxx\n\n80\n\nEves 7\n\nelasticity of demand=-0.076\n\nE= slope Price\n\nQd\n\nof Supply = 0.088\n\n-0.076= a x 30\n\na=-0\u00b7060\n\nelasticity\n\n23.84\n\ny: mx+c\n\nDemand cute linear\n\n23.84=0.060(30)+C\n\nOD = a+ bP\n\nQ0 - bP = a\n\n23.8u - (-0.060\u00d730)=a\n\nQ:25.6u0\n\nQn = 25.640-0.0609",
+      "expected_text": "Tutorial Questions\nQues 6\nQ = 240 - 4P\na) $0\nb) 240 - 4P = 0\n4P = 240\nP = $60\n\nc) $30  d) Elasticity = slope x Price/Qd\nQd = 240 - 4(40)\n= 80\n= 2 x 40/80 = 2\n\nQues 7\nelasticity of demand = -0.076\nE = slope x Price/Qd\nelasticity of supply = 0.088\n-0.076 = a x 30/23.84\na = -0.060\n\nDemand curve linear\ny = mx + c\nQd = a + bP\nQd - bP = a\n23.84 - (-0.060 x 30) = a\na = 25.640\nQd = 25.640 - 0.060P"
+    }
+  ]
+}

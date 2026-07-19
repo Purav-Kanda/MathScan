@@ -210,6 +210,28 @@ app = modal.App("mathscan-api", image=image)
     # ~30s model load on every single one. Scales fully to $0 after 5
     # idle minutes with nobody using it.
     timeout=120,  # generous ceiling for a slow multi-page job.
+    # WHY a Modal Secret here, not an .env() value baked into the image
+    # (like PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK above): that env var isn't
+    # sensitive -- a real API key is. Secrets are stored encrypted by Modal
+    # and only injected into the running container's environment, never
+    # baked into the image itself (which would leak it to anyone who could
+    # inspect the built image). inference.py's _llm_correct_text() reads
+    # GROQ_API_KEY via os.environ and is a complete no-op if it's missing,
+    # so nothing about the rest of the app depends on this secret existing.
+    #
+    # WHY this line requires the secret to already exist (deploy fails
+    # loudly with "secret not found" otherwise, rather than silently
+    # deploying without it): that's a deliberate tradeoff -- once this line
+    # is in the code, it's obvious from a failed deploy that the secret
+    # needs to be created, instead of a deploy silently succeeding and the
+    # LLM correction pass silently never running with no signal why. Create
+    # it once, from your own machine (needs the Modal CLI already set up
+    # from the M4 deploy):
+    #
+    #     modal secret create groq-api-key GROQ_API_KEY=<your free Groq key>
+    #
+    # After that, `modal deploy api/modal_app.py` picks it up automatically.
+    secrets=[modal.Secret.from_name("groq-api-key")],
 )
 @modal.concurrent(max_inputs=4)  # let one warm container's event loop
 # serve a few overlapping requests instead of forcing a fresh (cold)

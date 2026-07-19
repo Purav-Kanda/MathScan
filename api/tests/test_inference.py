@@ -45,6 +45,12 @@ class FakeP2T:
 
 
 def test_recognize_page_aggregates_confidence(monkeypatch):
+    # WHY this test now expects ONE combined region, not two: M6.5 collapses
+    # every page into a single page-level block (see
+    # inference._collapse_to_page_result) so Groq can correct the whole page
+    # with real context instead of one isolated region at a time. The mean
+    # confidence is still the average of the ORIGINAL per-region scores --
+    # only the region list itself is now collapsed to one item.
     monkeypatch.setattr(
         inference,
         "_p2t",
@@ -59,10 +65,176 @@ def test_recognize_page_aggregates_confidence(monkeypatch):
     result = inference.recognize_page(image=None)  # FakeP2T ignores `image`
 
     assert result["confidence_mean"] == (0.92 + 0.40) / 2
-    assert len(result["regions"]) == 2
-    assert result["regions"][0]["latex"] == r"x^2"
-    assert result["regions"][1]["confidence"] == 0.40
-    assert result["regions"][0]["bbox"] == [[0, 0], [10, 0], [10, 10], [0, 10]]
+    assert len(result["regions"]) == 1
+    assert result["regions"][0]["type"] == "page"
+    assert result["regions"][0]["confidence"] == (0.92 + 0.40) / 2
+    # Both original "isolated" regions get wrapped in \[ \] (the same rule
+    # UploadFlow.tsx's formatRegionForExport used per-region), joined into
+    # one page-level string -- GROQ_API_KEY is unset in tests, so
+    # _correct_full_page is a true no-op and this combined text passes
+    # through unchanged.
+    assert result["regions"][0]["latex"] == "\\[\nx^2\n\\]\n\n\\[\n+y\n\\]"
+
+
+def test_recognize_page_sorts_by_line_number_when_present(monkeypatch):
+    # WHY this test: a real benchmark run found the combined page text badly
+    # scrambled because this function used to just take Pix2Text's raw
+    # region list order, ignoring the `line_number` field Pix2Text already
+    # computes per region. Feeding regions in shuffled raw order but with
+    # line_number values 0, 1, 2 verifies they get put back into that
+    # correct order in the final combined text, not left in raw order.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "third", "type": "text", "score": 0.9, "position": FakePosition([[0, 20], [10, 20], [10, 30], [0, 30]]), "line_number": 2},
+                {"text": "first", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]]), "line_number": 0},
+                {"text": "second", "type": "text", "score": 0.9, "position": FakePosition([[0, 10], [10, 10], [10, 20], [0, 20]]), "line_number": 1},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    # GROQ_API_KEY is unset in tests, so _correct_full_page is a no-op --
+    # the combined page text passes through, letting us check pure ordering.
+    # WHY single "\n", not "\n\n", between them: consecutive line_numbers
+    # (0, 1, 2) mean these are adjacent real lines of the page, not separate
+    # paragraphs -- see _combine_regions_to_page's docstring for why a
+    # blank line between every single region was itself a real accuracy bug
+    # (shredded continuous prose into one word per "paragraph").
+    assert result["regions"][0]["latex"] == "first\nsecond\nthird"
+
+
+def test_recognize_page_sorts_same_line_number_by_left_x(monkeypatch):
+    # Two regions sharing a line_number (side-by-side content, e.g. "f(x)"
+    # and "g(x)" on the same visual line) should still order left-to-right
+    # by their bounding box's x-position, not end up in raw list order.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "right", "type": "text", "score": 0.9, "position": FakePosition([[50, 0], [60, 0], [60, 10], [50, 10]]), "line_number": 0},
+                {"text": "left", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]]), "line_number": 0},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    # WHY a single space, not a newline: same line_number means these are
+    # fragments of ONE visual line (e.g. Pix2Text split "f(x) = g(x)" into
+    # two regions) -- concatenating with a space reconstructs the real
+    # line, matching how the ground truth actually reads.
+    assert result["regions"][0]["latex"] == "left right"
+
+
+def test_recognize_page_inserts_blank_line_on_line_number_gap(monkeypatch):
+    # A jump of more than 1 in line_number (e.g. 0 then 3) means Pix2Text
+    # itself detected a real gap -- a blank line or paragraph break in the
+    # source image, not just the next line down. That should still produce
+    # a blank-line separator, the same conservative behavior as before this
+    # fix, not get squashed onto one line.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "top", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]]), "line_number": 0},
+                {"text": "bottom", "type": "text", "score": 0.9, "position": FakePosition([[0, 30]]), "line_number": 3},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    assert result["regions"][0]["latex"] == "top\n\nbottom"
+
+
+def test_recognize_page_reconstructs_fragmented_prose_sentence(monkeypatch):
+    # WHY this exact scenario: this is the real bug found via
+    # eval/accuracy_benchmark.py -- a real handwritten prose page came back
+    # with Pix2Text detecting one continuous sentence as several small
+    # regions all sharing (or nearly sharing) the same reading position,
+    # and the old code joined ALL regions with a blank line unconditionally
+    # -- "Create\n\nmore equitable\n\ninternational\n\norder..." instead of
+    # one real sentence. Simulates a sentence split into 3 same-line
+    # fragments to confirm they reassemble into one continuous line.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "Create a new", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]]), "line_number": 0},
+                {"text": "international economic", "type": "text", "score": 0.9, "position": FakePosition([[80, 0]]), "line_number": 0},
+                {"text": "order", "type": "text", "score": 0.9, "position": FakePosition([[200, 0]]), "line_number": 0},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    assert result["regions"][0]["latex"] == "Create a new international economic order"
+
+
+def test_recognize_page_preserves_raw_order_when_no_line_number(monkeypatch):
+    # Backward-compat check: PaddleOCR's fallback path and older callers
+    # don't provide line_number at all -- those regions must keep exactly
+    # today's behavior (original list order), not get scrambled by a sort
+    # that has nothing real to sort on.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "a", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]])},
+                {"text": "b", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]])},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    assert result["regions"][0]["latex"] == "a\n\nb"
+
+
+def test_strip_hallucinated_cjk_removes_only_cjk_scripts():
+    # WHY this exact case: a real benchmark run against calculus_p15.jpg
+    # produced a stray Chinese character '二' ("two") embedded mid-formula
+    # in Pix2Text's raw output -- a known decoder failure mode on dense
+    # handwritten math (see recognize_page's docstring). This app only ever
+    # sees English-language coursework, so any CJK character in the output
+    # is always this failure, never a correct read.
+    assert "二" not in inference._strip_hallucinated_cjk("ρ1\n二\n2\nC1")
+    # Legit Greek letters and math symbols this pipeline already relies on
+    # must NOT be touched -- this guard is deliberately narrow to CJK/
+    # Hiragana/Katakana/Hangul only.
+    legit = "ρ = 1/2 < 1 ∴ diverges ∞ → ± × ÷"
+    assert inference._strip_hallucinated_cjk(legit) == legit
+
+
+def test_recognize_page_strips_hallucinated_cjk_from_regions(monkeypatch):
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {
+                    "text": "ρ1\n二\n2",
+                    "type": "text",
+                    "score": 0.9,
+                    "position": FakePosition([[0, 0]]),
+                }
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    assert "二" not in result["regions"][0]["latex"]
+    assert "ρ" in result["regions"][0]["latex"]
 
 
 def test_recognize_page_handles_no_regions(monkeypatch):
@@ -241,7 +413,376 @@ def test_recognize_page_keeps_pix2text_when_fallback_scores_lower(monkeypatch):
     result = inference.recognize_page(image=None, try_fallback=True)
 
     assert result["confidence_mean"] == 0.50
-    assert result["regions"][0]["latex"] == "ok-ish"
+    # WHY "\[\nok-ish\n\]", not bare "ok-ish": M6.5's page-level collapse
+    # wraps "isolated"-type regions in \[ \] (the same rule
+    # formatRegionForExport() used per-region) before combining them into
+    # the page string -- the content is still Pix2Text's own "ok-ish", just
+    # now formatted the way every region is once collapsed to page level.
+    assert result["regions"][0]["latex"] == "\\[\nok-ish\n\\]"
+
+
+def test_llm_correct_text_noop_without_api_key(monkeypatch):
+    # WHY this matters: CI never sets GROQ_API_KEY, and neither does a local
+    # dev checkout by default -- this confirms the function degrades to a
+    # true no-op (no network call attempted at all) rather than crashing
+    # when the key is absent, exactly like try_fallback's off-by-default
+    # design above.
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert inference._llm_correct_text("some ocr text") == "some ocr text"
+
+
+def test_llm_correct_text_uses_response_when_key_present(monkeypatch):
+    # WHY "some ocr txet" -> "some ocr text", not an unrelated example: this
+    # has to be a realistic word-for-word OCR fix (same word count, close
+    # per-word similarity) or _correction_changes_too_much's guard -- added
+    # after the real "scientific"->"concise toxic" hallucination -- will
+    # correctly reject it, same as it would in production. An example that
+    # changes word count or swaps in an unrelated word isn't a valid test
+    # of "the response gets used," it's actually testing the rejection
+    # path instead.
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "some ocr text"}}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse()
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    assert inference._llm_correct_text("some ocr txet") == "some ocr text"
+
+
+def test_llm_correct_text_falls_back_on_any_error(monkeypatch):
+    # WHY this matters: a rate limit, timeout, or malformed response from
+    # Groq's free tier should never break a user's conversion -- this
+    # confirms _llm_correct_text swallows the error and returns the
+    # original (pre-LLM) text instead of raising.
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    def fake_post(*args, **kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    assert inference._llm_correct_text("original text") == "original text"
+
+
+def test_llm_correct_latex_noop_without_api_key(monkeypatch):
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert inference._llm_correct_latex(r"x^2 + y") == r"x^2 + y"
+
+
+def test_llm_correct_latex_uses_response_when_key_present(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": r"x^2 + y^2"}}]}
+
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: FakeResponse())
+
+    assert inference._llm_correct_latex(r"x^2 t y2") == r"x^2 + y^2"
+
+
+def test_llm_correct_latex_falls_back_on_any_error(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    def fake_post(*args, **kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("httpx.post", fake_post)
+
+    assert inference._llm_correct_latex(r"garbled \frac{1}{") == r"garbled \frac{1}{"
+
+
+def test_correction_changes_too_much_catches_the_real_observed_failure():
+    # WHY these exact strings: the real handwritten line and the real
+    # (wrong) Groq response from a live test -- "scientific" replaced with
+    # the unrelated two-word phrase "concise toxic". See
+    # _correction_changes_too_much's docstring for the full story.
+    original = "if we want a scientific answer to political questions"
+    hallucinated = "if we want a concise toxic answer to political questions"
+    assert inference._correction_changes_too_much(original, hallucinated) is True
+
+
+def test_correction_changes_too_much_catches_unrelated_word_swaps():
+    # Two more real observed failures from the same live test: both keep
+    # the word count the same, so only the per-word similarity check (not
+    # the word-count check) catches these.
+    assert inference._correction_changes_too_much(
+        "that is in line with your hypothesis", "that is in line with car hypothesis"
+    ) is True
+    assert inference._correction_changes_too_much(
+        "variables not enough", "variables not each"
+    ) is True
+
+
+def test_correction_changes_too_much_allows_real_ocr_misread_fixes():
+    # WHY: these are the same real, verified-correct fixes from
+    # test_fix_typos_corrects_real_misreads_and_preserves_capitalization --
+    # confirms the guard doesn't reject the exact kind of fix it's meant to
+    # allow through.
+    assert inference._correction_changes_too_much("echure", "lecture") is False
+    assert inference._correction_changes_too_much("Spply", "Supply") is False
+    assert inference._correction_changes_too_much("demond", "demand") is False
+    assert inference._correction_changes_too_much(
+        "the echure was long", "the lecture was long"
+    ) is False
+
+
+def test_correction_changes_too_much_ignores_trailing_punctuation():
+    assert inference._correction_changes_too_much("guideline", "guideline.") is False
+
+
+def test_llm_correct_text_rejects_hallucinated_paraphrase_and_keeps_original(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {"message": {"content": "if we want a concise toxic answer to political questions"}}
+                ]
+            }
+
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: FakeResponse())
+
+    original = "if we want a scientific answer to political questions"
+    assert inference._llm_correct_text(original) == original
+
+
+def test_looks_like_llm_refusal_catches_the_sentinel_token():
+    assert inference._looks_like_llm_refusal("NOCHANGE") is True
+    assert inference._looks_like_llm_refusal("  NOCHANGE  ") is True
+
+
+def test_looks_like_llm_refusal_catches_the_real_observed_failure():
+    # WHY this exact string: the real response Groq gave on a live test,
+    # for a short/incomplete OCR fragment it couldn't confidently fix --
+    # instead of following the "return unchanged" instruction, it wrote
+    # conversational meta-text that then got exported verbatim as if it
+    # were real corrected content. See _LLM_NO_CHANGE_TOKEN's comment.
+    real_refusal = (
+        "I'm not sure what the original LaTeX was, as the input is "
+        "incomplete. Please provide the full LaTeX code for me to "
+        "attempt to correct."
+    )
+    assert inference._looks_like_llm_refusal(real_refusal) is True
+
+
+def test_looks_like_llm_refusal_leaves_real_content_alone():
+    assert inference._looks_like_llm_refusal(r"x^2 + y^2 = z^2") is False
+    assert inference._looks_like_llm_refusal("Lecture 2: Basics of Supply and Demand.") is False
+
+
+def test_llm_correct_text_rejects_refusal_and_keeps_original(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {"message": {"content": "I'm not sure what this says, please provide more context."}}
+                ]
+            }
+
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: FakeResponse())
+
+    original = "garbled fragment"
+    assert inference._llm_correct_text(original) == original
+
+
+def test_llm_correct_latex_rejects_refusal_and_keeps_original(monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"choices": [{"message": {"content": "NOCHANGE"}}]}
+
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: FakeResponse())
+
+    original = r"\U"
+    assert inference._llm_correct_latex(original) == original
+
+
+def test_looks_like_repetition_garbage_catches_the_real_observed_failure():
+    # WHY this exact string: the real garbage Groq produced on a live test,
+    # padding a broken-brace region instead of leaving it alone -- see
+    # _looks_like_repetition_garbage's docstring and 12_Code_Walkthrough_
+    # MathScan.md's M6.5 section.
+    real_garbage = r"\times\vert\times\vert\times\vert\times\vert\times\vert\times\vert"
+    assert inference._looks_like_repetition_garbage(real_garbage) is True
+
+
+def test_looks_like_repetition_garbage_leaves_real_latex_alone():
+    # Real math legitimately repeats short symbols sometimes (e.g. a
+    # sequence x, y, z or a run of 1s in a matrix) -- but only a handful of
+    # times, never a dozen+ identical consecutive short runs. This confirms
+    # the heuristic doesn't misfire on plausible real LaTeX.
+    assert inference._looks_like_repetition_garbage(r"x^2 + y^2 = z^2") is False
+    assert inference._looks_like_repetition_garbage(r"A \cap B \cup C") is False
+
+
+def test_llm_correct_latex_rejects_repetition_garbage_and_keeps_original(monkeypatch):
+    # WHY this matters: even if Groq ignores the tightened prompt's
+    # instructions, this confirms _llm_correct_latex's own safety net
+    # catches it and falls back to the original text rather than exporting
+    # the padded garbage.
+    monkeypatch.setenv("GROQ_API_KEY", "fake-key-for-test")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {
+                "choices": [
+                    {"message": {"content": r"\vert\times\vert\times\vert\times\vert\times"}}
+                ]
+            }
+
+    monkeypatch.setattr("httpx.post", lambda *a, **kw: FakeResponse())
+
+    original = r"\frac{(A-B)}{"  # a genuinely broken, unbalanced region
+    assert inference._llm_correct_latex(original) == original
+
+
+def test_has_balanced_braces_matches_real_cases():
+    assert inference._has_balanced_braces(r"\frac{1}{2}") is True
+    assert inference._has_balanced_braces(r"\frac{(A-B)}{") is False  # unclosed
+    assert inference._has_balanced_braces(r"} extra close") is False
+    assert inference._has_balanced_braces(r"literal \{ brace") is True  # escaped, doesn't count
+
+
+def test_format_region_for_page_omits_only_the_broken_region():
+    # WHY this test matters: a real live test showed ONE region with an
+    # unbalanced brace causing the frontend to omit the ENTIRE page's
+    # export, not just that one region -- a direct consequence of
+    # collapsing everything into one block. This confirms the fix: brace-
+    # checking happens PER REGION here, before combining, so only the
+    # genuinely broken region gets swapped for a comment.
+    good_region = {"latex": r"x^2 + y^2", "type": "isolated"}
+    broken_region = {"latex": r"\frac{(A-B)}{", "type": "isolated"}
+
+    assert inference._format_region_for_page(good_region) == "\\[\nx^2 + y^2\n\\]"
+    assert (
+        inference._format_region_for_page(broken_region)
+        == "% [region omitted: unbalanced braces in source]"
+    )
+
+
+def test_combine_regions_to_page_keeps_good_regions_when_one_is_broken():
+    regions = [
+        {"latex": "confident", "type": "text"},
+        {"latex": r"\frac{(A-B)}{", "type": "isolated"},  # unbalanced
+        {"latex": r"x^2", "type": "isolated"},
+    ]
+    combined = inference._combine_regions_to_page(regions)
+
+    assert "confident" in combined
+    assert "\\[\nx^2\n\\]" in combined
+    assert "% [region omitted: unbalanced braces in source]" in combined
+    # The broken region's raw (unbalanced) text must never appear un-omitted.
+    assert r"\frac{(A-B)}{" not in combined.replace(
+        "% [region omitted: unbalanced braces in source]", ""
+    )
+
+
+def test_page_correction_changed_too_much_catches_real_insertion_failure():
+    # WHY this exact case: the real Groq response from a live test --
+    # inserting the brand-new words "/", "→", "Chopper" into an
+    # otherwise-correct sentence. An earlier version of this guard only
+    # checked total word-count drift as a PERCENTAGE of the whole page,
+    # which this 3-word insertion stayed comfortably under once diluted
+    # across a realistic full page -- see the function's docstring. This
+    # confirms the fix: any insert/delete opcode is now rejected outright,
+    # regardless of how small a fraction of the page it represents.
+    page_original = (
+        "Sept lecture 2 : Basics of Supply and Demand . 2.1 to 2.4 2.1 : "
+        "Supply and Demand man to for hon in d vi diva is illegal "
+        "tobingaee holding constant other factors ."
+    )
+    page_hallucinated = page_original.replace("lecture 2", "lecture / → Chopper 2")
+    assert inference._page_correction_changed_too_much(page_original, page_hallucinated) is True
+
+
+def test_page_correction_changed_too_much_allows_word_for_word_swaps():
+    page_original = "Sept lecture 2 : Basics of Supply and Demund ."
+    page_fixed = "Sept lecture 2 : Basics of Supply and Demand ."
+    assert inference._page_correction_changed_too_much(page_original, page_fixed) is False
+
+
+def test_page_correction_changed_too_much_rejects_any_word_count_change():
+    # WHY: the tightened guard is deliberately strict -- even a SINGLE word
+    # added or removed anywhere on the page rejects the whole correction,
+    # matching _correct_full_page's own prompt instruction not to add or
+    # remove words at all.
+    assert inference._page_correction_changed_too_much("a b c", "a b c d") is True
+    assert inference._page_correction_changed_too_much("a b c d", "a b c") is True
+
+
+def test_recognize_page_always_collapses_to_one_page_level_region(monkeypatch):
+    # WHY this test replaces the old per-region gating test (M6.5): Groq
+    # correction no longer runs per-region at all -- it runs ONCE per page,
+    # ALWAYS, regardless of any individual region's confidence. This
+    # confirms recognize_page calls the page-level collapse/correction path
+    # (via _correct_full_page) even when every region is individually
+    # confident, and that it runs on the COMBINED page text, not per-region.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "confident", "type": "isolated", "score": 0.95, "position": FakePosition([[0, 0]])},
+                {"text": "also confident", "type": "isolated", "score": 0.99, "position": FakePosition([[0, 0]])},
+            ]
+        ),
+    )
+    calls = []
+
+    def fake_correct_full_page(page_text):
+        calls.append(page_text)
+        return "CORRECTED PAGE"
+
+    monkeypatch.setattr(inference, "_correct_full_page", fake_correct_full_page)
+
+    result = inference.recognize_page(image=None)
+
+    # Called once, with BOTH regions already combined into one string --
+    # not called per-region, and not skipped just because confidence is high.
+    assert calls == ["\\[\nconfident\n\\]\n\n\\[\nalso confident\n\\]"]
+    assert len(result["regions"]) == 1
+    assert result["regions"][0]["type"] == "page"
+    assert result["regions"][0]["latex"] == "CORRECTED PAGE"
+
+
+def test_recognize_page_skips_page_collapse_when_there_are_no_regions(monkeypatch):
+    # WHY: an empty page (nothing detected) should keep regions == [] so the
+    # frontend's "No math detected on this page" message still shows --
+    # wrapping an empty page into a "page"-type region would silently break
+    # that, and there's nothing for Groq to correct on a blank page anyway.
+    monkeypatch.setattr(inference, "_p2t", FakeP2T([]))
+
+    result = inference.recognize_page(image=None)
+
+    assert result["regions"] == []
 
 
 def test_recognize_page_applies_contrast_only_when_requested(monkeypatch):

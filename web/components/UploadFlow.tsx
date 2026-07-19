@@ -347,6 +347,23 @@ export default function UploadFlow() {
     latex: string,
     type: string
   ): { text: string; wasValid: boolean } {
+    // WHY "page" is a special case, not run through fixKnownBadPatterns/
+    // wrapping/escaping like the other types: as of M6.5, the backend
+    // (inference.py's _collapse_to_page_result) already combines a whole
+    // page's regions into ONE string, already wrapped (\[ \] / $ $) and
+    // already escaped per-original-region-type server-side -- see
+    // inference.py's _format_region_for_page, which applies the exact same
+    // rule this function used to apply per-region. Re-wrapping or
+    // re-escaping it here would double-escape it. The brace-balance check
+    // still runs, though -- now across the WHOLE page instead of one
+    // region, since a genuinely broken brace anywhere in the page is still
+    // fatal to the whole export if it reaches Tectonic as-is.
+    if (type === "page") {
+      if (!hasBalancedBraces(latex)) {
+        return { text: "% [page omitted: unbalanced braces in source]", wasValid: false };
+      }
+      return { text: latex, wasValid: true };
+    }
     const fixed = fixKnownBadPatterns(latex);
     if (!hasBalancedBraces(fixed)) {
       // Swap the broken source for a harmless comment instead of a real
