@@ -56,6 +56,43 @@ async def export_tex(payload: ExportRequest):
     return Response(content=tex_source, media_type="text/plain")
 
 
+def _run_tectonic(tex_source: str, tmp_dir: str) -> subprocess.CompletedProcess:
+    tex_path = Path(tmp_dir) / "document.tex"
+    tex_path.write_text(tex_source, encoding="utf-8")
+
+    # WHY Tectonic over pdflatex/full TeX Live: Tectonic ships as one
+    # self-contained binary and fetches only the packages a document
+    # actually uses, on demand -- vs. TeX Live's multi-GB install of
+    # every package that exists. `-X compile` is Tectonic's v2+ CLI.
+    try:
+        return subprocess.run(
+            ["tectonic", "-X", "compile", str(tex_path), "--outdir", tmp_dir],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=500,
+            detail="Tectonic is not installed on this server. Install it and ensure it's on PATH.",
+        )
+
+
+# WHY a retry loop, not a single compile-or-fail attempt: a real export hit
+# this exact failure mode -- one garbled OCR region on one page (e.g.
+# `\textcircled{\div}` sitting inside display math, which only makes sense
+# in text mode) broke Tectonic's parser, and Tectonic aborts the ENTIRE
+# document on the first fatal error rather than skipping just that line.
+# Without this loop, one bad region anywhere in a multi-page document means
+# the user gets zero PDF, even though every other page was fine. Since
+# Tectonic's own stderr already tells us the exact line number that broke
+# (that's what the pre-existing context-building code below parses), the
+# fix is to comment out just that one line and try again -- worst case, the
+# user loses one malformed line (already visible/editable in the LaTeX
+# editor before export) instead of losing the whole document.
+_MAX_COMPILE_RETRIES = 5
+
+
 @router.post("/pdf")
 async def export_pdf(payload: ExportRequest):
     tex_source = build_tex(payload.pages)
@@ -65,25 +102,24 @@ async def export_pdf(payload: ExportRequest):
     # TemporaryDirectory guarantees cleanup even if compilation throws --
     # no leftover .tex/.pdf/.aux files accumulating on the server over time.
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tex_path = Path(tmp_dir) / "document.tex"
-        tex_path.write_text(tex_source, encoding="utf-8")
+        result = _run_tectonic(tex_source, tmp_dir)
+        attempts = 0
 
-        # WHY Tectonic over pdflatex/full TeX Live: Tectonic ships as one
-        # self-contained binary and fetches only the packages a document
-        # actually uses, on demand -- vs. TeX Live's multi-GB install of
-        # every package that exists. `-X compile` is Tectonic's v2+ CLI.
-        try:
-            result = subprocess.run(
-                ["tectonic", "-X", "compile", str(tex_path), "--outdir", tmp_dir],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=500,
-                detail="Tectonic is not installed on this server. Install it and ensure it's on PATH.",
-            )
+        while result.returncode != 0 and attempts < _MAX_COMPILE_RETRIES:
+            match = re.search(r"document\.tex:(\d+):", result.stderr)
+            if not match:
+                break  # no line number to act on -- fall through to the error below
+
+            bad_line = int(match.group(1))
+            lines = tex_source.splitlines()
+            idx = bad_line - 1
+            if not (0 <= idx < len(lines)) or lines[idx].lstrip().startswith("%"):
+                break  # already commented out or out of range -- can't make progress
+
+            lines[idx] = f"% [omitted: broke PDF compilation] {lines[idx]}"
+            tex_source = "\n".join(lines)
+            attempts += 1
+            result = _run_tectonic(tex_source, tmp_dir)
 
         if result.returncode != 0:
             # Tectonic's own error output ("document.tex:27: Missing $
