@@ -37,7 +37,29 @@ def test_create_then_read_share_round_trip():
 
     read = client.get(f"/api/share/{share_id}")
     assert read.status_code == 200
-    assert read.json() == payload
+    # WHY not a plain `== payload` anymore: ShareRegion gained optional
+    # region_count/low_confidence_count fields (M6.5 confidence-breakdown
+    # work) so the frontend can show "N of M sections below 70%" on shared
+    # pages. Pydantic serializes those as explicit `null` even when the
+    # request never sent them, so a round-tripped region has two more keys
+    # than the original payload -- expected schema growth, not a bug.
+    expected = {
+        "pages": [
+            {
+                "page": 0,
+                "regions": [
+                    {
+                        "latex": "x^2=4",
+                        "type": "isolated",
+                        "confidence": 0.95,
+                        "region_count": None,
+                        "low_confidence_count": None,
+                    }
+                ],
+            }
+        ]
+    }
+    assert read.json() == expected
 
 
 def test_unknown_share_id_returns_404():
