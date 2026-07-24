@@ -75,6 +75,10 @@ export default function SharePageView() {
                       <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
                         <ConfidenceBadge confidence={region.confidence} />
                         <span>{region.type}</span>
+                        <ConfidenceBreakdown
+                          regionCount={region.region_count}
+                          lowConfidenceCount={region.low_confidence_count}
+                        />
                       </div>
                       {/* onChange is a no-op here on purpose -- this view
                           never sends edits back to the backend, it's just
@@ -107,6 +111,28 @@ function ConfidenceBadge({ confidence }: { confidence: number | null }) {
       }`}
     >
       {(confidence * 100).toFixed(0)}%
+    </span>
+  );
+}
+
+// Duplicated from UploadFlow.tsx's ConfidenceBreakdown for the same reason
+// as ConfidenceBadge above -- see that component's docstring-equivalent
+// comment in UploadFlow.tsx for the full "why" (page-level collapse means
+// the single badge is an average, this shows the honest breakdown).
+function ConfidenceBreakdown({
+  regionCount,
+  lowConfidenceCount,
+}: {
+  regionCount?: number;
+  lowConfidenceCount?: number;
+}) {
+  if (!regionCount || !lowConfidenceCount) {
+    return null;
+  }
+  return (
+    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+      {lowConfidenceCount} of {regionCount} section{regionCount === 1 ? "" : "s"} below 70% --
+      review carefully
     </span>
   );
 }

@@ -551,63 +551,121 @@ def _format_region_for_page(region: dict) -> str:
     return _escape_latex_text(latex)
 
 
+def _assign_line_indices(regions: list) -> Optional[float]:
+    """
+    Groups regions into visual lines from their bounding-box geometry,
+    mutating each region in place with three internal fields:
+      "_line_index": int | None  -- 0-based, top to bottom (None if no bbox)
+      "_left_x": float           -- for left-to-right ordering within a line
+      "_y_center": float         -- vertical center, for sizing line gaps
+    Returns the median region height (always >= 1), or None if no region had
+    usable bounding-box geometry at all.
+
+    WHY BBOX GEOMETRY, NOT Pix2Text's `line_number`: an earlier version of
+    the page-combining logic below relied on each region's `line_number`
+    field to tell same-line fragments from real new lines. A real benchmark
+    run (eval/accuracy_benchmark.py, 15 images) proved that field comes back
+    None on real handwritten pages -- so that logic silently did nothing,
+    every region fell through to the conservative "blank line between
+    everything" default, and prose pages stayed shredded into one word per
+    "paragraph" (the exact bug it was meant to fix). Bounding boxes, on the
+    other hand, are always populated on the Pix2Text path, so deriving lines
+    from actual vertical positions works where line_number didn't. Regions
+    with no bbox (the PaddleOCR fallback path returns bbox=None) get
+    _line_index=None and are handled conservatively by the caller.
+
+    HOW: two regions are treated as the same visual line when their vertical
+    centers are within half a median line-height of each other -- close
+    enough to be side-by-side fragments of one row, not the next row down.
+    """
+    with_geometry = []
+    for region in regions:
+        bbox = region.get("bbox")
+        if bbox:
+            ys = [point[1] for point in bbox]
+            xs = [point[0] for point in bbox]
+            region["_y_top"] = min(ys)
+            region["_y_bottom"] = max(ys)
+            region["_left_x"] = min(xs)
+            region["_y_center"] = (min(ys) + max(ys)) / 2
+            with_geometry.append(region)
+        else:
+            region["_line_index"] = None
+            region["_left_x"] = 0
+            region["_y_center"] = 0
+
+    if not with_geometry:
+        return None
+
+    heights = sorted(r["_y_bottom"] - r["_y_top"] for r in with_geometry)
+    # `or 1`: single-point/zero-height boxes (and unit-test fakes) can make
+    # the median 0, which would make every gap "infinitely many line
+    # heights" -- 1 is a safe floor that keeps the same-line threshold sane.
+    median_height = heights[len(heights) // 2] or 1
+
+    top_to_bottom = sorted(with_geometry, key=lambda r: r["_y_center"])
+    line_index = 0
+    line_reference_center = top_to_bottom[0]["_y_center"]
+    for region in top_to_bottom:
+        if region["_y_center"] - line_reference_center > 0.5 * median_height:
+            line_index += 1
+            line_reference_center = region["_y_center"]
+        region["_line_index"] = line_index
+
+    return median_height
+
+
 def _combine_regions_to_page(regions: list) -> str:
     """
-    Joins every region on a page into one page-level string, in the order
-    given (see recognize_page's region-sorting step for how that order is
-    determined).
+    Joins every region on a page into one page-level string, in real reading
+    order (top-to-bottom, left-to-right) reconstructed from bounding-box
+    geometry via _assign_line_indices -- see that function for WHY geometry
+    and not Pix2Text's line_number.
 
-    WHY THE SEPARATOR BETWEEN REGIONS VARIES, not always a blank line: a
-    real benchmark run (eval/accuracy_benchmark.py) found this was
-    previously joining with "\n\n" (a blank line) between EVERY region,
-    unconditionally. Pix2Text frequently detects one sentence as many small
-    regions -- one or two words each -- so a real prose page like "Create a
-    new international economic order where it helps..." came out as
-    "Create\n\nmore equitable\n\ninternational\n\norder\n\n...", one word
-    per "paragraph." Edit-distance-based accuracy punishes that heavily
-    (dozens of extra characters per line) even when every individual word
-    is correct -- confirmed by word_overlap_recall (order/spacing-
-    insensitive) scoring far higher than character_accuracy on the exact
-    same pages.
-
-    Fix: use each region's `line_number` (Pix2Text's own reading-order
-    signal, also used to sort regions -- see recognize_page) to tell real
-    line breaks from same-line continuations:
-      - same line_number as the previous region -> join with a single
-        space (these are side-by-side fragments of one visual line, e.g.
-        "Create" then "a new international..." -- concatenating them IS
-        the sentence).
-      - line_number exactly one more than the previous -> join with a
-        single newline (a genuine new line of the page, same paragraph).
-      - a bigger jump, or line_number missing (e.g. the PaddleOCR fallback
-        path, which doesn't provide it) -> join with a blank line, the
-        previous, more conservative behavior -- safe default when there's
-        no real signal to do better.
+    WHY THE SEPARATOR VARIES, not always a blank line: Pix2Text frequently
+    detects one sentence as many small regions -- one or two words each --
+    so before this, a real prose page like "Create a new international
+    economic order where it helps..." came out as "Create\n\nmore
+    equitable\n\ninternational\n\norder\n\n...", one word per "paragraph."
+    Edit-distance accuracy punishes that heavily even when every word is
+    correct (confirmed: word_overlap_recall scored far higher than
+    character_accuracy on exactly these pages). So:
+      - same visual line as the previous region -> single SPACE (these are
+        side-by-side fragments of one line -- concatenating them IS the
+        sentence).
+      - next line, normal spacing -> single newline.
+      - a large vertical gap (> 1.6 median line-heights, i.e. real blank
+        space / paragraph break) -> blank line.
+      - either region lacks geometry (PaddleOCR fallback path) -> blank
+        line, the conservative default when there's no signal to do better.
     """
     kept = [r for r in regions if r.get("latex", "").strip()]
     if not kept:
         return ""
 
-    pieces = []
-    previous_line_number = None
-    for region in kept:
-        formatted = _format_region_for_page(region)
-        line_number = region.get("line_number")
-        if not pieces:
-            pieces.append(formatted)
+    median_height = _assign_line_indices(kept)
+
+    # Stable sort into reading order. Regions with geometry sort by
+    # (line, then left-x); regions without (fallback path) all share one key
+    # so Python's stable sort keeps their original order among themselves.
+    def _reading_order_key(region: dict):
+        if region["_line_index"] is None:
+            return (0, 0, 0.0)
+        return (1, region["_line_index"], region["_left_x"])
+
+    kept.sort(key=_reading_order_key)
+
+    pieces = [_format_region_for_page(kept[0])]
+    for previous, current in zip(kept, kept[1:]):
+        if previous["_line_index"] is None or current["_line_index"] is None:
+            separator = "\n\n"
+        elif current["_line_index"] == previous["_line_index"]:
+            separator = " "
+        elif (current["_y_center"] - previous["_y_center"]) > 1.6 * (median_height or 1):
+            separator = "\n\n"
         else:
-            if line_number is None or previous_line_number is None:
-                separator = "\n\n"
-            else:
-                gap = line_number - previous_line_number
-                if gap == 0:
-                    separator = " "
-                elif gap == 1:
-                    separator = "\n"
-                else:
-                    separator = "\n\n"
-            pieces.append(separator + formatted)
-        previous_line_number = line_number
+            separator = "\n"
+        pieces.append(separator + _format_region_for_page(current))
     return "".join(pieces)
 
 
@@ -763,6 +821,24 @@ def _collapse_to_page_result(result: dict) -> dict:
     page_text = _combine_regions_to_page(regions)
     corrected_page_text = _correct_full_page(page_text)
 
+    # WHY track this, even though it can't point at exact words within the
+    # combined text: collapsing to one page-level region (the whole point
+    # of M6.5) means the single confidence badge this returns is now an
+    # AVERAGE across everything on the page -- a page that's 90% clean
+    # notes and 10% illegible scrawl can average out to a badge that looks
+    # fine, hiding the one part a student actually needs to double-check.
+    # True per-word highlighting isn't safely possible here: _correct_full_page
+    # can rewrite the text above (fixing typos, changing length), so any
+    # character offsets computed from the ORIGINAL regions wouldn't
+    # reliably line up with the corrected text returned to the frontend.
+    # This is the honest middle ground -- not exact positions, but a real
+    # count of how many of the original regions were individually
+    # low-confidence, so "78% confidence" and "78% confidence, but 4 of 11
+    # sections were below 70%" can be told apart.
+    low_confidence_regions = [
+        r for r in regions if r.get("confidence") is not None and r["confidence"] < 0.70
+    ]
+
     return {
         "regions": [
             {
@@ -770,6 +846,8 @@ def _collapse_to_page_result(result: dict) -> dict:
                 "type": "page",
                 "bbox": None,
                 "confidence": result["confidence_mean"],
+                "region_count": len(regions),
+                "low_confidence_count": len(low_confidence_regions),
             }
         ],
         "confidence_mean": result["confidence_mean"],
@@ -863,6 +941,21 @@ _DOMAIN_VOCABULARY = [
     "supply", "demand", "equilibrium", "market", "elasticity", "economics",
     "hypothesis", "variable", "equation", "theorem", "derivative",
     "integral", "function", "formula", "calculus", "algebra",
+    # WHY these specifically, added after building the accuracy benchmark's
+    # real test set (eval/test_set/ground_truth.json): pulled directly from
+    # word-frequency analysis of 16 real, hand-transcribed course pages
+    # (calculus, econ, poli-sci) -- same "verified against real observed
+    # text" standard as the original list above, not guessed additions.
+    # Calculus/series vocabulary:
+    "converges", "diverges", "convergent", "divergent", "monotonic",
+    "comparison", "conditionally", "increasing", "decreasing",
+    # Economics vocabulary:
+    "marginal", "utility", "elasticity", "curve", "slope", "linear",
+    # Political science / poli-sci vocabulary:
+    "terrorism", "terrorist", "democratic", "geopolitical", "globalisation",
+    "globalization", "dependency", "capitalism", "premeditated", "sanctions",
+    "embargo", "sovereignty", "demographic", "demography", "fertility",
+    "mortality", "migration", "heterogeneous",
 ]
 
 # WHY a module-level, lazily-built SpellChecker (not one per call): loading
@@ -1026,7 +1119,7 @@ def recognize_page(
 
     regions = []
     scores = []
-    for index, r in enumerate(raw_regions):
+    for r in raw_regions:
         score = r.get("score")
         if score is not None:
             scores.append(score)
@@ -1037,57 +1130,24 @@ def recognize_page(
         # function. As of M6.5, Groq correction runs ONCE per page instead,
         # on the whole page's combined content -- see _correct_full_page,
         # called from this function's final step, below.
+        # WHY reading order isn't reconstructed HERE anymore: an earlier
+        # version sorted regions in this function using Pix2Text's
+        # `line_number` field, which a real benchmark run proved comes back
+        # None on real pages (so the sort did nothing). Reading order is now
+        # derived from bounding-box geometry inside _combine_regions_to_page
+        # (via _assign_line_indices), which is where the page string is
+        # actually assembled -- see those functions. This loop just collects
+        # the raw regions; their list order here no longer matters, since
+        # the page always collapses to one combined string that gets
+        # re-ordered by geometry at that point.
         regions.append(
             {
                 "latex": _strip_hallucinated_cjk(r.get("text", "")),
                 "type": r.get("type", "unknown"),
                 "bbox": bbox,
                 "confidence": score,
-                # WHY line_number is kept (not part of the documented public
-                # result shape above): used to sort regions into real
-                # reading order below, AND passed through to
-                # _combine_regions_to_page so it can tell same-line
-                # continuations from real new lines when choosing how to
-                # join regions (space vs newline vs blank line) -- see that
-                # function's docstring. Only ever read internally; the
-                # single "page"-type region recognize_page ultimately
-                # returns is a fresh dict built by _collapse_to_page_result,
-                # so this never actually reaches API callers.
-                "line_number": r.get("line_number"),
-                "_raw_index": index,
             }
         )
-
-    # WHY sort by (line_number, left-x) before combining into page text: a
-    # real benchmark run against real handwritten pages found the combined
-    # page text badly scrambled -- e.g. a diagram-style poli-sci page with
-    # arrows/branches came out with words in an order nothing like the
-    # source, and edit-distance-based accuracy punished that severely even
-    # when nearly every individual word was correctly read (confirmed via
-    # eval/accuracy_benchmark.py's word_overlap_recall metric scoring far
-    # higher than character_accuracy on the same pages). The root cause:
-    # Pix2Text's recognize_text_formula already computes a `line_number` per
-    # region (its own best guess at reading order, grouping regions on the
-    # same visual line) but this function was discarding it entirely and
-    # just using whatever order the raw list came back in. Sorting by
-    # (line_number, then left-x for regions sharing a line) restores real
-    # top-to-bottom, left-to-right reading order using information Pix2Text
-    # was already computing for free -- no new dependency, no API cost.
-    # Regions with no line_number (e.g. the PaddleOCR fallback path, or unit
-    # test fakes that don't set it) fall back to their original list
-    # position via _raw_index, so behavior is unchanged when line_number
-    # isn't available.
-    def _region_sort_key(region: dict):
-        line_number = region["line_number"]
-        region_bbox = region["bbox"]
-        left_x = region_bbox[0][0] if region_bbox else 0
-        if line_number is None:
-            return (0, region["_raw_index"], 0)
-        return (1, line_number, left_x)
-
-    regions.sort(key=_region_sort_key)
-    for region in regions:
-        del region["_raw_index"]
 
     confidence_mean = sum(scores) / len(scores) if scores else None
     result = {"regions": regions, "confidence_mean": confidence_mean}

@@ -15,6 +15,17 @@ export interface Region {
   type: string;
   bbox: number[][] | null;
   confidence: number | null;
+  // WHY optional, only present on "page"-type regions (inference.py's
+  // _collapse_to_page_result): a page-level region's single `confidence`
+  // is an AVERAGE across everything Pix2Text/PaddleOCR detected on the
+  // page, which can hide one genuinely bad section behind an otherwise-fine
+  // score. These two fields let the UI show that breakdown honestly --
+  // "N of M original sections were below the confidence threshold" --
+  // without claiming to know exactly WHICH words those were (true
+  // per-word highlighting isn't reliable once Groq's full-page correction
+  // may have rewritten the text; see that function's docstring).
+  region_count?: number;
+  low_confidence_count?: number;
 }
 
 export interface PageResult {

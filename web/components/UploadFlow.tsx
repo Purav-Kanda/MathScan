@@ -138,6 +138,8 @@ export default function UploadFlow() {
           latex: editedLatex[regionKey(p.page, i)] ?? region.latex,
           type: region.type,
           confidence: region.confidence,
+          region_count: region.region_count,
+          low_confidence_count: region.low_confidence_count,
         })),
       }));
     try {
@@ -637,6 +639,10 @@ export default function UploadFlow() {
                     <div className="mb-1 flex items-center gap-2 text-xs text-neutral-400">
                       <ConfidenceBadge confidence={region.confidence} />
                       <span>{region.type}</span>
+                      <ConfidenceBreakdown
+                        regionCount={region.region_count}
+                        lowConfidenceCount={region.low_confidence_count}
+                      />
                     </div>
                     <EditableLatexRegion
                       initialLatex={region.latex}
@@ -742,6 +748,35 @@ function ConfidenceBadge({ confidence }: { confidence: number | null }) {
       }`}
     >
       {(confidence * 100).toFixed(0)}%
+    </span>
+  );
+}
+
+// WHY this exists separately from ConfidenceBadge: since M6.5 collapsed a
+// whole page into one region, the single badge above shows an AVERAGE
+// confidence across everything Pix2Text/PaddleOCR detected on the page --
+// a page that's mostly clean with one bad paragraph can still average out
+// to a badge that looks reassuring. This renders alongside it as an honest
+// "how many of the original pieces were actually uncertain" signal, e.g.
+// "3 of 11 sections below 70% -- review carefully", so a good-looking
+// average doesn't hide a real problem spot. Only renders when the backend
+// actually sent this breakdown (page-type regions do; anything without
+// region_count silently renders nothing, so this is a no-op for other
+// region types).
+function ConfidenceBreakdown({
+  regionCount,
+  lowConfidenceCount,
+}: {
+  regionCount?: number;
+  lowConfidenceCount?: number;
+}) {
+  if (!regionCount || !lowConfidenceCount) {
+    return null;
+  }
+  return (
+    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+      {lowConfidenceCount} of {regionCount} section{regionCount === 1 ? "" : "s"} below 70% --
+      review carefully
     </span>
   );
 }

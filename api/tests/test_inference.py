@@ -72,78 +72,72 @@ def test_recognize_page_aggregates_confidence(monkeypatch):
     # UploadFlow.tsx's formatRegionForExport used per-region), joined into
     # one page-level string -- GROQ_API_KEY is unset in tests, so
     # _correct_full_page is a true no-op and this combined text passes
-    # through unchanged.
-    assert result["regions"][0]["latex"] == "\\[\nx^2\n\\]\n\n\\[\n+y\n\\]"
+    # through unchanged. WHY a SPACE between them (not a blank line): both
+    # bounding boxes span y 0-10, i.e. the same visual line -- geometry-
+    # based combining (see _assign_line_indices) treats same-line fragments
+    # as one line and joins them with a space, ordered left-to-right by x.
+    assert result["regions"][0]["latex"] == "\\[\nx^2\n\\] \\[\n+y\n\\]"
 
 
-def test_recognize_page_sorts_by_line_number_when_present(monkeypatch):
+def test_recognize_page_orders_regions_top_to_bottom_by_bbox(monkeypatch):
     # WHY this test: a real benchmark run found the combined page text badly
-    # scrambled because this function used to just take Pix2Text's raw
-    # region list order, ignoring the `line_number` field Pix2Text already
-    # computes per region. Feeding regions in shuffled raw order but with
-    # line_number values 0, 1, 2 verifies they get put back into that
-    # correct order in the final combined text, not left in raw order.
+    # scrambled. The fix reconstructs reading order from bounding-box
+    # geometry (see _assign_line_indices) -- NOT Pix2Text's line_number
+    # field, which that same benchmark proved comes back None on real pages.
+    # Feeding regions in shuffled list order, with bboxes stacked vertically
+    # (y 0-10, 10-20, 20-30), verifies they come back top-to-bottom.
     monkeypatch.setattr(
         inference,
         "_p2t",
         FakeP2T(
             [
-                {"text": "third", "type": "text", "score": 0.9, "position": FakePosition([[0, 20], [10, 20], [10, 30], [0, 30]]), "line_number": 2},
-                {"text": "first", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]]), "line_number": 0},
-                {"text": "second", "type": "text", "score": 0.9, "position": FakePosition([[0, 10], [10, 10], [10, 20], [0, 20]]), "line_number": 1},
+                {"text": "third", "type": "text", "score": 0.9, "position": FakePosition([[0, 20], [10, 20], [10, 30], [0, 30]])},
+                {"text": "first", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]])},
+                {"text": "second", "type": "text", "score": 0.9, "position": FakePosition([[0, 10], [10, 10], [10, 20], [0, 20]])},
             ]
         ),
     )
 
     result = inference.recognize_page(image=None)
 
-    # GROQ_API_KEY is unset in tests, so _correct_full_page is a no-op --
-    # the combined page text passes through, letting us check pure ordering.
-    # WHY single "\n", not "\n\n", between them: consecutive line_numbers
-    # (0, 1, 2) mean these are adjacent real lines of the page, not separate
-    # paragraphs -- see _combine_regions_to_page's docstring for why a
-    # blank line between every single region was itself a real accuracy bug
-    # (shredded continuous prose into one word per "paragraph").
+    # Adjacent lines (small vertical gaps) -> single newline between them,
+    # not a blank line -- see _combine_regions_to_page's docstring.
     assert result["regions"][0]["latex"] == "first\nsecond\nthird"
 
 
-def test_recognize_page_sorts_same_line_number_by_left_x(monkeypatch):
-    # Two regions sharing a line_number (side-by-side content, e.g. "f(x)"
-    # and "g(x)" on the same visual line) should still order left-to-right
-    # by their bounding box's x-position, not end up in raw list order.
+def test_recognize_page_orders_same_line_fragments_left_to_right(monkeypatch):
+    # Two fragments on the SAME visual line (both bboxes span y 0-10) should
+    # be ordered left-to-right by x and joined with a single space -- this
+    # is the core of the fragmentation fix (Pix2Text often splits one line
+    # into several side-by-side regions; concatenating them IS the line).
     monkeypatch.setattr(
         inference,
         "_p2t",
         FakeP2T(
             [
-                {"text": "right", "type": "text", "score": 0.9, "position": FakePosition([[50, 0], [60, 0], [60, 10], [50, 10]]), "line_number": 0},
-                {"text": "left", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]]), "line_number": 0},
+                {"text": "right", "type": "text", "score": 0.9, "position": FakePosition([[50, 0], [60, 0], [60, 10], [50, 10]])},
+                {"text": "left", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]])},
             ]
         ),
     )
 
     result = inference.recognize_page(image=None)
 
-    # WHY a single space, not a newline: same line_number means these are
-    # fragments of ONE visual line (e.g. Pix2Text split "f(x) = g(x)" into
-    # two regions) -- concatenating with a space reconstructs the real
-    # line, matching how the ground truth actually reads.
     assert result["regions"][0]["latex"] == "left right"
 
 
-def test_recognize_page_inserts_blank_line_on_line_number_gap(monkeypatch):
-    # A jump of more than 1 in line_number (e.g. 0 then 3) means Pix2Text
-    # itself detected a real gap -- a blank line or paragraph break in the
-    # source image, not just the next line down. That should still produce
-    # a blank-line separator, the same conservative behavior as before this
-    # fix, not get squashed onto one line.
+def test_recognize_page_inserts_blank_line_on_large_vertical_gap(monkeypatch):
+    # A large vertical gap between regions (y 0 then y 60, far more than one
+    # line height) means a real blank line / paragraph break in the source,
+    # not just the next line down -- that should produce a blank-line
+    # separator, not get squashed onto one line.
     monkeypatch.setattr(
         inference,
         "_p2t",
         FakeP2T(
             [
-                {"text": "top", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]]), "line_number": 0},
-                {"text": "bottom", "type": "text", "score": 0.9, "position": FakePosition([[0, 30]]), "line_number": 3},
+                {"text": "top", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [10, 0], [10, 10], [0, 10]])},
+                {"text": "bottom", "type": "text", "score": 0.9, "position": FakePosition([[0, 60], [10, 60], [10, 70], [0, 70]])},
             ]
         ),
     )
@@ -157,19 +151,19 @@ def test_recognize_page_reconstructs_fragmented_prose_sentence(monkeypatch):
     # WHY this exact scenario: this is the real bug found via
     # eval/accuracy_benchmark.py -- a real handwritten prose page came back
     # with Pix2Text detecting one continuous sentence as several small
-    # regions all sharing (or nearly sharing) the same reading position,
-    # and the old code joined ALL regions with a blank line unconditionally
-    # -- "Create\n\nmore equitable\n\ninternational\n\norder..." instead of
-    # one real sentence. Simulates a sentence split into 3 same-line
-    # fragments to confirm they reassemble into one continuous line.
+    # regions on the same visual line, and the old code joined ALL regions
+    # with a blank line unconditionally -- "Create\n\nmore
+    # equitable\n\ninternational\n\norder..." instead of one real sentence.
+    # Three same-line fragments (all y 0-10, increasing x) must reassemble
+    # into one continuous line.
     monkeypatch.setattr(
         inference,
         "_p2t",
         FakeP2T(
             [
-                {"text": "Create a new", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]]), "line_number": 0},
-                {"text": "international economic", "type": "text", "score": 0.9, "position": FakePosition([[80, 0]]), "line_number": 0},
-                {"text": "order", "type": "text", "score": 0.9, "position": FakePosition([[200, 0]]), "line_number": 0},
+                {"text": "Create a new", "type": "text", "score": 0.9, "position": FakePosition([[0, 0], [70, 0], [70, 10], [0, 10]])},
+                {"text": "international economic", "type": "text", "score": 0.9, "position": FakePosition([[80, 0], [180, 0], [180, 10], [80, 10]])},
+                {"text": "order", "type": "text", "score": 0.9, "position": FakePosition([[200, 0], [240, 0], [240, 10], [200, 10]])},
             ]
         ),
     )
@@ -179,18 +173,20 @@ def test_recognize_page_reconstructs_fragmented_prose_sentence(monkeypatch):
     assert result["regions"][0]["latex"] == "Create a new international economic order"
 
 
-def test_recognize_page_preserves_raw_order_when_no_line_number(monkeypatch):
-    # Backward-compat check: PaddleOCR's fallback path and older callers
-    # don't provide line_number at all -- those regions must keep exactly
-    # today's behavior (original list order), not get scrambled by a sort
-    # that has nothing real to sort on.
+def test_recognize_page_preserves_raw_order_when_no_bbox(monkeypatch):
+    # The PaddleOCR fallback path returns regions with bbox=None (no
+    # geometry to reconstruct reading order from). Those must keep their
+    # original list order and fall back to the conservative blank-line
+    # separator -- geometry-based combining has nothing to sort on, so it
+    # must not scramble them. Simulated here with position=None, matching
+    # what _recognize_page_paddleocr actually produces.
     monkeypatch.setattr(
         inference,
         "_p2t",
         FakeP2T(
             [
-                {"text": "a", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]])},
-                {"text": "b", "type": "text", "score": 0.9, "position": FakePosition([[0, 0]])},
+                {"text": "a", "type": "text", "score": 0.9, "position": None},
+                {"text": "b", "type": "text", "score": 0.9, "position": None},
             ]
         ),
     )
@@ -318,6 +314,22 @@ def test_fix_typos_corrects_real_misreads_and_preserves_capitalization():
     # Capitalization of the ORIGINAL word should be preserved even though
     # pyspellchecker's corrections are always lowercase internally.
     assert inference._fix_typos("olher") == "other"
+
+
+def test_fix_typos_corrects_calculus_and_polisci_domain_words():
+    # WHY these exact words: the domain vocabulary was expanded after
+    # building eval/test_set/ground_truth.json (16 real, hand-transcribed
+    # course pages) and mining it for real domain terms -- these plausible
+    # OCR-garbled variants were verified directly against pyspellchecker
+    # (with vs without the boost) before being added here, same standard as
+    # the original econ-notes cases above. Without the boost: "convergs" ->
+    # "converge" (wrong tense), "divergs" -> "divers" (wrong word entirely),
+    # "monotomic" -> "monatomic" (a chemistry term, wrong domain),
+    # "terrosm" -> "terror" (wrong word). The boost fixes all four.
+    assert inference._fix_typos("convergs") == "converges"
+    assert inference._fix_typos("divergs") == "diverges"
+    assert inference._fix_typos("monotomic") == "monotonic"
+    assert inference._fix_typos("terrosm") == "terrorism"
 
 
 def test_fix_typos_has_a_real_known_limit_not_fixed_by_domain_boost():
@@ -767,10 +779,56 @@ def test_recognize_page_always_collapses_to_one_page_level_region(monkeypatch):
 
     # Called once, with BOTH regions already combined into one string --
     # not called per-region, and not skipped just because confidence is high.
-    assert calls == ["\\[\nconfident\n\\]\n\n\\[\nalso confident\n\\]"]
+    # (Both fakes share bbox [[0,0]], so geometry-based combining treats them
+    # as one visual line and joins with a space -- see _assign_line_indices.)
+    assert calls == ["\\[\nconfident\n\\] \\[\nalso confident\n\\]"]
     assert len(result["regions"]) == 1
     assert result["regions"][0]["type"] == "page"
     assert result["regions"][0]["latex"] == "CORRECTED PAGE"
+
+
+def test_recognize_page_reports_low_confidence_breakdown(monkeypatch):
+    # WHY this test: collapsing to one page-level region means the single
+    # `confidence` field is an AVERAGE -- a page that's mostly clean with
+    # one bad region can still average out to a reassuring-looking score.
+    # region_count/low_confidence_count let the frontend show the honest
+    # breakdown ("2 of 3 sections below 70%") instead of just the average.
+    # Threshold matches the app's existing 0.70 default (recognize_page's
+    # fallback_threshold, and the frontend's ConfidenceBadge cutoff).
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "a", "type": "text", "score": 0.95, "position": FakePosition([[0, 0]])},
+                {"text": "b", "type": "text", "score": 0.40, "position": FakePosition([[0, 0]])},
+                {"text": "c", "type": "text", "score": 0.20, "position": FakePosition([[0, 0]])},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    assert result["regions"][0]["region_count"] == 3
+    assert result["regions"][0]["low_confidence_count"] == 2
+
+
+def test_recognize_page_low_confidence_count_is_zero_when_all_confident(monkeypatch):
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [
+                {"text": "a", "type": "text", "score": 0.95, "position": FakePosition([[0, 0]])},
+                {"text": "b", "type": "text", "score": 0.99, "position": FakePosition([[0, 0]])},
+            ]
+        ),
+    )
+
+    result = inference.recognize_page(image=None)
+
+    assert result["regions"][0]["region_count"] == 2
+    assert result["regions"][0]["low_confidence_count"] == 0
 
 
 def test_recognize_page_skips_page_collapse_when_there_are_no_regions(monkeypatch):

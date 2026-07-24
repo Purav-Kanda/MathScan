@@ -63,11 +63,23 @@ process; works fine in isolation) points at native-code resource buildup in
 Paddle/ONNX across repeated model loads, which segfaults instead of raising
 a catchable Python exception. Isolating each image into a fresh subprocess
 means each one starts with clean native state, so this can't happen -- at
-the cost of reloading the models per image (slower, but this only needs to
-run occasionally, not on every request).
+the cost of reloading the models per image.
+
+WHY --workers (subprocess parallelism), added after a 16-image run took ~1
+hour: each subprocess reloads the models (~30-60s) and one image can hang
+long enough to hit the timeout, and doing them strictly one-at-a-time meant
+all that dead time stacked up serially. Because each image already runs in
+its OWN isolated subprocess (above), several can run at once with no shared
+state to corrupt -- the isolation that made this slow is exactly what makes
+it safe to parallelize. Default is a conservative 3 concurrent workers
+(each OCR process is memory-hungry; 3 keeps RAM sane on a typical laptop --
+raise it with --workers if you have the cores/RAM, lower to 1 to reproduce
+the old serial behavior). A hung image now also fails fast (--timeout,
+default 300s) instead of blocking the whole run for 10 minutes.
 """
 
 import argparse
+import concurrent.futures
 import json
 import subprocess
 import sys
@@ -188,7 +200,9 @@ def load_ground_truth() -> dict:
         return json.load(f)
 
 
-def _recognize_via_subprocess(image_path: Path, apply_contrast: bool, try_fallback: bool, resized_shape: int) -> dict:
+def _recognize_via_subprocess(
+    image_path: Path, apply_contrast: bool, try_fallback: bool, resized_shape: int, timeout: int
+) -> dict:
     """
     Runs _recognize_one.py as a fresh subprocess for a single image (see the
     module docstring for why). Returns the parsed result dict on success, or
@@ -209,7 +223,7 @@ def _recognize_via_subprocess(image_path: Path, apply_contrast: bool, try_fallba
         cmd.append("--no-fallback")
 
     try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"timed out after {exc.timeout}s") from exc
 
@@ -265,6 +279,23 @@ def main():
         "results_1024.json) so runs with different settings don't overwrite each other -- "
         "useful when comparing --resized-shape/--apply-contrast combinations side by side.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=3,
+        help="How many image subprocesses to run at once (default 3). Each still runs in its "
+        "own isolated subprocess -- this just runs several in parallel to cut wall-clock time. "
+        "Each OCR process is memory-hungry, so raise this only if you have the cores/RAM; use "
+        "--workers 1 for the old strictly-serial behavior.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=300,
+        help="Per-image seconds before a subprocess is killed and that image counted as failed "
+        "(default 300). A single hung image (e.g. a Pix2Text decoder repetition loop) then fails "
+        "fast instead of blocking the whole run.",
+    )
     args = parser.parse_args()
 
     ground_truth = load_ground_truth()
@@ -272,47 +303,72 @@ def main():
         print(f"{GROUND_TRUTH_PATH} exists but is empty -- add at least one entry.")
         sys.exit(1)
 
-    print(f"Running {len(ground_truth)} image(s), each in its own subprocess (see module docstring for why)...")
-
-    per_image_results = []
-    failed_images = []
+    # Only images that actually exist on disk -- skip (with a note) any
+    # ground-truth entry whose image file is missing, before dispatching work.
+    to_run = []
     for filename, expected_text in ground_truth.items():
         image_path = IMAGES_DIR / filename
         if not image_path.exists():
             print(f"SKIPPING {filename}: not found in {IMAGES_DIR}")
             continue
+        to_run.append((filename, expected_text, image_path))
 
-        print(f"{filename}: running (loading models fresh, ~30-60s)...")
+    workers = max(1, args.workers)
+    print(
+        f"Running {len(to_run)} image(s), {workers} at a time, each in its own subprocess "
+        f"(see module docstring for why)..."
+    )
+
+    def _score_one(job):
+        """Runs one image end-to-end (subprocess -> metrics). Returns a
+        (filename, result_dict_or_None, error_or_None) tuple so the parent
+        loop can record a success or a failure without either one aborting
+        the others -- each runs in its own isolated subprocess anyway."""
+        filename, expected_text, image_path = job
         try:
             result = _recognize_via_subprocess(
                 image_path,
                 apply_contrast=args.apply_contrast,
                 try_fallback=args.try_fallback,
                 resized_shape=args.resized_shape,
+                timeout=args.timeout,
             )
         except (RuntimeError, json.JSONDecodeError) as exc:
-            print(f"{filename}: FAILED -- {exc}")
-            failed_images.append(filename)
-            continue
+            return (filename, None, str(exc))
 
         predicted_text = extract_predicted_text(result)
-        accuracy = character_accuracy(predicted_text, expected_text)
-        overlap_recall = word_overlap_recall(predicted_text, expected_text)
-
-        per_image_results.append(
+        return (
+            filename,
             {
                 "filename": filename,
-                "accuracy": accuracy,
-                "word_overlap_recall": overlap_recall,
+                "accuracy": character_accuracy(predicted_text, expected_text),
+                "word_overlap_recall": word_overlap_recall(predicted_text, expected_text),
                 "confidence_mean": result.get("confidence_mean"),
                 "predicted_text": predicted_text,
                 "expected_text": expected_text,
-            }
+            },
+            None,
         )
-        print(
-            f"{filename}: {accuracy * 100:.1f}% character accuracy, "
-            f"{overlap_recall * 100:.1f}% word-overlap recall"
-        )
+
+    # Collected keyed by filename, then re-ordered to match ground_truth
+    # below -- parallel completion order is nondeterministic, but the saved
+    # report should always list images in a stable, comparable order.
+    scored = {}
+    failed_images = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        for filename, per_image, error in executor.map(_score_one, to_run):
+            if error is not None:
+                print(f"{filename}: FAILED -- {error}")
+                failed_images.append(filename)
+                continue
+            scored[filename] = per_image
+            print(
+                f"{filename}: {per_image['accuracy'] * 100:.1f}% character accuracy, "
+                f"{per_image['word_overlap_recall'] * 100:.1f}% word-overlap recall"
+            )
+
+    # Stable order: follow the ground-truth file's ordering, skipping failures.
+    per_image_results = [scored[fn] for fn, _, _ in to_run if fn in scored]
 
     if failed_images:
         print(f"\n{len(failed_images)} image(s) failed and were excluded from the results below: {failed_images}")
@@ -354,6 +410,8 @@ def main():
                 "try_fallback": args.try_fallback,
                 "apply_contrast": args.apply_contrast,
                 "resized_shape": args.resized_shape,
+                "workers": workers,
+                "timeout": args.timeout,
                 "per_image": per_image_results,
             },
             indent=2,

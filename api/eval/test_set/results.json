@@ -1,10 +1,12 @@
 {
-  "mean_accuracy": 0.32470742473800873,
-  "mean_word_overlap_recall": 0.5534855905642423,
+  "mean_accuracy": 0.32158933107501186,
+  "mean_word_overlap_recall": 0.5216428152438628,
   "target": 0.8,
   "passed": false,
-  "sample_size": 3,
-  "failed_images": [],
+  "sample_size": 15,
+  "failed_images": [
+    "calculus_p40.jpg"
+  ],
   "try_fallback": true,
   "apply_contrast": false,
   "resized_shape": 768,
@@ -32,6 +34,102 @@
       "confidence_mean": 0.8729607065518697,
       "predicted_text": "Tutorial Questions\n\nPrice \\$)\n\nEves 6\n\nRED=\n\n2\n\n\u2460=240-4P\n\nPER=1\n\na) 80\n\nb)\n\n240-49=0\n\n\u2192Oly.D\n\nPER:0\n\nAP=240\n\nP=\\$60\n\nC)\n\n0d  240- 4(40)\n\n\\$ 30\n\nd) Elasticity = slope\n\nNice\n\nod\n\n-80\n\nAD\n\n2\n\nxx\n\n80\n\nEves 7\n\nelasticity of demand=-0.076\n\nE= slope Price\n\nQd\n\nof Supply = 0.088\n\n-0.076= a x 30\n\na=-0\u00b7060\n\nelasticity\n\n23.84\n\ny: mx+c\n\nDemand cute linear\n\n23.84=0.060(30)+C\n\nOD = a+ bP\n\nQ0 - bP = a\n\n23.8u - (-0.060\u00d730)=a\n\nQ:25.6u0\n\nQn = 25.640-0.0609",
       "expected_text": "Tutorial Questions\nQues 6\nQ = 240 - 4P\na) $0\nb) 240 - 4P = 0\n4P = 240\nP = $60\n\nc) $30  d) Elasticity = slope x Price/Qd\nQd = 240 - 4(40)\n= 80\n= 2 x 40/80 = 2\n\nQues 7\nelasticity of demand = -0.076\nE = slope x Price/Qd\nelasticity of supply = 0.088\n-0.076 = a x 30/23.84\na = -0.060\n\nDemand curve linear\ny = mx + c\nQd = a + bP\nQd - bP = a\n23.84 - (-0.060 x 30) = a\na = 25.640\nQd = 25.640 - 0.060P"
+    },
+    {
+      "filename": "calculus_p25.jpg",
+      "accuracy": 0.04272517321016167,
+      "word_overlap_recall": 0.4729064039408867,
+      "confidence_mean": 0.7082405233612428,
+      "predicted_text": "$\\sqrt{x^{5}-2}$ $\\mathbf{d} \\mathbf{x}$ $x^{8}-a \\leq x^{8}$\n$\\Rightarrow\\sqrt{x^{8}-2} < \\sqrt{x^{8}}=x^{4}$\n$\\chi^{6}$\nCtaep $\\sqrt{x^{8}-2}$ $< \\underbrace{x^{4}}$ : $\\chi^{-2}$\n$\\chi^{\\mathbf{b}}$ $\\chi^{\\iota}$\n(naoN $\\boldsymbol{2}$ .ow $\\mathcal{g}^{\\varrho}$\n\n) $\\S_{\\omicron}^{\\pi_{l}}$ :u $\\mathbf{d} \\mathbf{x}$ $\\frac{\\cdot\\hbar} {\\cdot\\hbar} \\theta\\theta$ $2-(-1 )=3$\n$2-1=1$\n$\\boldsymbol{n}^{\\boldsymbol{\\imath} \\boldsymbol{\\imath}_{2}}$\n$- 1 \\leq\\sin\\left( x \\right) \\leq1$\nA $\\frac{2-\\sin( x )} {x^{\\prime}_{2}} \\leq\\frac{3} {x^{\\prime}_{2}}$\n3x*\"^sx\n$= 3 ( \\frac{x^{y_{2}}} {y_{2}}+c ) \\vert^{n_{y_{2}}}=3 ( 2 ( y_{2} )^{y_{2}}+c-( 0+c ) )$ LaALa $\\mathbf{C o v e r g e g e g}$\n$\\mathbf{Q}_{1}=1$ $\\mathrm{o f} \\setminus\\mathbf{a_{n}} \\rfloor$ ue 41, a $\\mathbf{l+a_{n}}$ $\\left\\{\\alpha_{\\alpha} \\right\\}$ n $\\{^{1, 2}_{2}, 3, 1 \\cdots\\}$\nind $\\mathbf{H}_{\\mathbf{q}}$ ${\\bf8_{d n}}$ $\\frac{\\pi a h \\pi\\theta} {\\pi a}$\nTnfom a $\\Omega\\in{\\bf N}$\n\n$\\alpha_{\\mathbf{q}}$ . $8_{0}$ $\\mathbf{l+\\omega}$ $\\boldsymbol{\\mathcal{Q}}$ `\n$\\mathbf{l} \\mathbf{+} \\mathbf{q}_{\\mathbf{I}}$ \u00b7:4",
+      "expected_text": "11) \\int_2^\\infty \\frac{\\sqrt{x^8-2}}{x^6} dx    x^8-2 \\le x^8\n\\Rightarrow \\sqrt{x^8-2} < \\sqrt{x^8} = x^4\n\n\\int_2^\\infty x^{-2} dx = -x^{-1}+C \\Big|_2^\\infty    \\frac{\\sqrt{x^8-2}}{x^6} < \\frac{x^4}{x^6} = x^{-2}\n\n= (\\lim_{x \\to \\infty} \\frac{-1}{x}+C) - (\\frac{-1}{2}+C) = \\frac{1}{2}  converges\n\n111) \\int_0^{\\pi/2} \\frac{2-\\sin(x)}{x^{1/2}} dx    2-1=1\n                                                      2-(-1)=3\n-1 \\le \\sin(x) \\le 1\n\\frac{2-\\sin(x)}{x^{1/2}} \\le \\frac{3}{x^{1/2}}\n\\int_0^{\\pi/2} 3x^{-1/2} dx\n\n= 3(\\frac{x^{1/2}}{1/2}+C)\\Big|_0^{\\pi/2}    = 3(2(\\pi/2)^{1/2}+C - (0+C))\n\n= 3(2\\frac{\\sqrt{\\pi}}{\\sqrt{2}}) = 3\\sqrt{2\\pi}  \\therefore converges\n\nHomework 2\nProblem 2\nfind the limit of {a_n} where a_1 = 1, a_{n+1} = \\frac{8a_n}{1+a_n}  {a_n} converges. n \\in N = {1,2,3,4...}\n\na_1 = 1\na_2 = \\frac{8a_1}{1+a_1} = \\frac{8(1)}{1+1} = \\frac{8}{2} = 4"
+    },
+    {
+      "filename": "calculus_p55.jpg",
+      "accuracy": 0.27554179566563464,
+      "word_overlap_recall": 0.42857142857142855,
+      "confidence_mean": 0.8355479270219803,
+      "predicted_text": "11) him\n\nBy At, we have\n\nn\n\n=0\n\nMan converges\n\nn\u2192\u221e\n\nn^3+2\n\nThus (ii)\n\nconverges conditionally\n\nQ\n\nn2\n\nf(x)=x\n\nC-1){+1\n\nland =\n\n\u2229 > In (G)\n\n>1\n\n7\n\n\u2229=2\n\n(n(n)\n\nIn (n)\n\n1\n\n2\n\nP-Serres=1\n\ndiverges\n\nAT\n\n|n (n+1)> 1n (n)\n\nb\\_{n+11\n\n(non)\n\nIn (n+1)\n\n\u2193\n\nIn is increasing\n\ndecreasing\n\n2) him\n\n=0\n\n( G)\n\n\u2229\u219200\n\n\u2192\n\nConverges\n\nconditionally",
+      "expected_text": "11) \\lim_{n\\to\\infty} \\frac{n}{\\sqrt{n^3+2}} = 0    By AST, we have \\sum a_n converges\n\\propto \\frac{1}{n^{1/2}}    Thus (ii) converges conditionally.\n                              a\n\n111) \\sum_{n=2}^\\infty \\frac{(-1)^{n+1}}{\\ln(n)}    |a_n| = \\frac{1}{\\ln(n)} > \\frac{1}{n}    n > \\ln(n)\n                                                       p-series = 1 diverges\n\nAST\n1) b_n \\ge b_{n+1} \\Rightarrow \\frac{1}{\\ln(n)} > \\frac{1}{\\ln(n+1)} \\Leftrightarrow \\ln(n+1) > \\ln(n)\n   decreasing                                                                        ln is increasing\n\n2) \\lim_{n\\to\\infty} \\frac{1}{\\ln(n)} = 0\n\n-> converges conditionally"
+    },
+    {
+      "filename": "econ_p20.jpg",
+      "accuracy": 0.2578947368421053,
+      "word_overlap_recall": 0.7073170731707317,
+      "confidence_mean": 0.8695166436955333,
+      "predicted_text": "Eves 3\n\nD0\n\nPrices)\n\nS\n\nS\n\n61\n\n01\n\nD\n\nD\n\nD\n\nOly\u00b7D\n\nO\u2192\n\nQuest 4\n\nP=51.T\n\n20=2\n\nRED=\n\n10\n\n1.0n\n\n2\n\n7\n\n5\n\nEves 5\n\n\u2460b=12-P\n\nP=18- D\n\nOD=18-P\n\n=12-P+(18-P)\n\n= 12-P+18-P\n\n30-29\n\n= 4P-30\n\n60 = 69\n\nP:10",
+      "expected_text": "Ques 3\n\nQues 4\nP = 5% P    PED = 20/10 = 2\n\n%QD/5 -> 2\n\nQues 5\nQD = 12 - P    P = 18 - QD\n               QD = 18 - P\n= 12 - P + (18 - P)\n= 12 - P + 18 - P\n= 30 - 2P = 4P - 30\n60 = 6P, P = 10"
+    },
+    {
+      "filename": "econ_p45.jpg",
+      "accuracy": 0.4872521246458924,
+      "word_overlap_recall": 0.8076923076923077,
+      "confidence_mean": 0.9012143015861511,
+      "predicted_text": "Chapter 3: Sample Questions\n\nQuest 1 \u2192 A\n\nQuest 2 > B\n\nQuest 3> D\n\nQuest 4 \u2192 A\n\nQuest 5\n\noff drinks\n\n\u2191\n\nUtility function: U=3Sc\n\nMum of\n\nbags\n\nMarginal Utility of S = 3C\n\nSoft drink = \\$0.50\n\nChips = \\$0.25\n\nmarginal Utility of C =3S\n\na) mRss,c\n\n=C\n\n= MISS\n\n=3C\n\nmust\n\nS\n\nS\n\nb)\n\nMs\n\nMc\n\nPs\n\nPc\n\nC\n\nC=2s\n\nms\n\nPS\n\nPC\n\n0.25\n\nmc\n\nS\n\nC) man soft drinks = 10\n\n\u2192 5 S.+10 C\n\nman\n\nChips\n\n=20",
+      "expected_text": "Chapter 3: Sample Questions\n\nQues 1 -> A\nQues 2 -> B\nQues 3 -> D\nQues 4 -> A\n\nQues 5\nUtility function: U = 3SC\nMarginal utility of S = 3C    Soft drink = $0.50\nMarginal utility of C = 3S    Chips = $0.25\n\na) MRS S/C = MRS S/MRS C = 3C/3S = C/S\n\nb) Ms/Ps = Mc/Pc\nMs/Mc = Ps/Pc\nC/S = 0.50/0.25    C = 2S\n\nc) max soft drinks = 10 -> 5S + 10C\nmax chips = 20"
+    },
+    {
+      "filename": "politics_p20.jpg",
+      "accuracy": 0.30927835051546393,
+      "word_overlap_recall": 0.16071428571428573,
+      "confidence_mean": 0.7837435305118561,
+      "predicted_text": "ATSES/E]\n\nCommercial\n\nsauces\n\nme cable\n\nY of ware\n\ngeopolial golds rest races\n\n\u21d2\n\nBring globalgain acid\n\nareas\n\n-Hyena\n\nmilitary or support use\n\nuse\n\nSA\n\n)sapotas\n\nfor\n\nf anility faro\n\nstars\n\nDemnocah'c\n\nmshihhons\n\nPI",
+      "expected_text": "What motives/beliefs underpin the use of force by democratic states?\n\nCommercial\nmercantile          sources of war\ngeopolitical gold resources\n\nBring globalisation to colonized areas\n\nHow much military violence does it take before you call it a war?\n\nuse military force or support use of military force  Vs Democratic states\n\nDemocratic institutions\nPublic indifference to foreign policy"
+    },
+    {
+      "filename": "politics_p30.jpg",
+      "accuracy": 0.4678624813153961,
+      "word_overlap_recall": 0.5816326530612245,
+      "confidence_mean": 0.8596789502736294,
+      "predicted_text": "Terrorism]\n\nIssues in\n\ndefining\n\nstatebeterrorist?\n\nterrorism\n\n2SS\n\n- Treat terrorism as a discourse\n\n- Treat\n\nterrorism as a social fact\n\nTerrorism\n\nNon-State terrorism\n\n Premeditated Vidlaxce\n\nagrapctterra\n\nState terrorism\n\nState Targe\n\n\u2193\n\n Political objectives\n\nterrorism\n\nViolate committed by\n\nA state provides o fear as a Tactic\n\nmaterial support to\n\nState as on act of\n\nterrorism\n\na non state terrorist\n\n\u2190\n\ngosh\n\naye ago hay\n\nTo promote pouch\n\no drag to\n\nCblechve\n\ntercanst act\n\nBut aligns with can\n\nforeign policy.",
+      "expected_text": "Terrorism: Violence against Civilians\ncan states be terrorist actors?\n2. One person's terrorist is another person's freedom fighter?    Issues in defining terrorism\n\n- Treat terrorism as a discourse\n- Treat terrorism as a social fact\n\nTerrorism -> Non-state terrorism\nPremeditated Violence\nOrganized groups commit terrorism\nCivilian Targets\nPolitical objectives\nFear as a Tactic\n\nState terrorism    State sponsored terrorism\nViolence committed by state as an act of terrorism    A state provides material support to a non state terrorist group\nTo promote political objective    They are the one that carries out the terrorist act\nBut aligns with country foreign policy."
+    },
+    {
+      "filename": "aging_p15.jpg",
+      "accuracy": 0.3960084033613446,
+      "word_overlap_recall": 0.35036496350364965,
+      "confidence_mean": 0.7697054964524729,
+      "predicted_text": "Town\n\ncitizens do and need.\n\n1. Health stars  health care usage/needk\n\n2. Housing Status needs\n\n4. Social / financial support needs\n\n5. Person needs\n\n[Roof\n\nCitizens\n\nsisnantrato\n\nShape their investments and product\n\nV\n\nHUgeman-Ag\n\nDemography\n\nthe study of why and haw populations change\n\nare time\n\nanmallarg,e\n\nfertility, mortality\n\nwent through 4 demographic\n\nmigration\n\nTransition\n\nDiffenat\n\n1. Population explosion \u2192 Big Tin population\n\n9\n\n[POOR\n\nPome\n\n[T\n\n\u2193dora rate",
+      "expected_text": "Population data allows us to gather insights about what citizens do and need.\n1. Health status & health care usage/needs\n2. Housing status & needs\n3. employment status & education needs\n4. Social/financial support needs\n5. Pension needs\n\nWithout population data, gov run the risk of not meeting the needs of citizens\n\nBusinesses and innovators in the private sector use demographic data to shape their investments and products\nHuge market for anti-aging products\n\nDemography -> The study of why and how populations change over time and become smaller, larger, older, younger\nFertility, mortality, migration\n\nWent through 4 demographic transition\n1. Population explosion -> Big increase in population\n2. Population implosion -> Population concentrated in small urban areas    Different\n3. Population displosion -> become more heterogeneous due to migration\n4. Technoplosion -> spread of new technology + creates improvements in public health, death rate"
+    },
+    {
+      "filename": "calculus_p70.jpg",
+      "accuracy": 0.32707774798927614,
+      "word_overlap_recall": 0.5894736842105263,
+      "confidence_mean": 0.8417379289865494,
+      "predicted_text": "ex 9\n\nx+3y2\u221ax^2+1\n\ndy\n\n=0\n\ny(0)=1\n\ndx\n\n3y2\n\n-2\n\ndx\n\nx^{2}+1\n\nU=x^2+1\uff0cdU=2xdx\n\ny{3= -Cx^{+1)12+C\n\n-1\n\nL\n\n\u221au\n\n2\n\n= -(x^{+1)2}+ c\n\n3\n\n-Cx^{+1)'2}+C\n\ny=\n\ny(0)=1\n\n1=3j-(0+1)2+c\n\ninch al: x=0\n\nvalve\n\ny=1\n\n1 =\n\n-1+C\n\n\u2192C=2\n\nS0l\n\nto 1up",
+      "expected_text": "ex 9\nx + 3y^2 \\sqrt{x^2+1}    dy/dx = 0    y(0)=1\n\n3y^2 dy = \\frac{-x}{\\sqrt{x^2+1}} dx    u = x^2+1, du = 2x dx\n\ny^3 = -(x^2+1)^{1/2}+C    \\frac{-1}{2}\\int \\frac{1}{\\sqrt{u}} du = -(u)^{1/2}+C\n                          = -(x^2+1)^{1/2}+C\ny = \\sqrt[3]{-(x^2+1)^{1/2}+C}\n\ny(0)=1\ninitial: x=0, value y=1    1 = \\sqrt[3]{-(0+1)^{1/2}+C}\n\n1 = \\sqrt[3]{-1+C}  -> C=2\n\nSol to IVP"
+    },
+    {
+      "filename": "calculus_p85.jpg",
+      "accuracy": 0.25077399380804954,
+      "word_overlap_recall": 0.7777777777777778,
+      "confidence_mean": 0.7424638248406924,
+      "predicted_text": "0a7st\n$\\frac{3 y^{\\prime}} {3 \\alpha\\sqrt{2}}$ 2 $\\frac{-8} {\\kappa_{2}}^{l}$ Wa ea $y=x^{\\prime}_{2}$ $\\mathbf{s}$ 3X $\\vert x=2 o r 6$\n$R_{n}=\\frac{f^{( n+1 )} C} {( n+1 )!} ( x-a )^{n+1}$ $\\frac{d^{3} y} {d x^{3}}=\\frac{1} {2} \\times\\frac{-1} {2} x-\\frac{3 x} {2}^{-9}_{2}$ 8 e\n\n$R_{2}=\\frac{f^{3} C ( x-4 )^{3}} {3!}$ $\\frac{d^{2} y} {d x^{2}}=\\frac{1} {2} x-\\frac{1} {2} x^{-3 x}$\n\n. $\\frac{3} {3 2 \\sqrt{2}} \\cdot\\frac{( 2-4 )^{3}} {3!}$ $3. ( 2 )^{-5 / 2}$\n\n$\\frac{3} {8} \\cdot\\frac{1} {( 2^{1 2} )^{5}}=\\frac{3} {8 \\cdot4 \\sqrt{2}}=\\textcircled{\\frac{3} {3 2 \\sqrt{2}}} m o n$\n7 $\\overbrace{\\frac{1} {8 \\sqrt{2}}}^{1}$ $\\lim x=6=\\frac{3} {8} \\frac{1} {( 6 )^{2}}=\\frac{3} {6 4 \\sqrt{2}}$\n\n$\\cos8 \\rightarrow2$\n$x=t^{3}-1 2 t$ $y=t^{2}-1$\n$d x=3 t^{2}-1 2$ $\\frac{d y} {d t}=2 t$\n$\\mathrm{d t}$\n$\\frac{\\Im\\ub( \\alpha)} {\\Im\\alpha}$ \uff1a\n$\\mathsf{d} t \\mathsf{d} y$\n: $3 t^{2}-1 2 > 0$\n$\\mathrm{a l}$ $3 t^{2}-1 2 > 0$\n$b^{2} \\cdot4 > 0$\n(+2){ta)a,ha\\&t-2",
+      "expected_text": "Ques 7 -> A\ny = x^{1/2}\nR_n = \\frac{f^{(n+1)}C (x-a)^{n+1}}{(n+1)!}    dy/dx = \\frac{1}{2}x^{-1/2}\n                                              d^2y/dx^2 = \\frac{1}{2}x^{-1}\\frac{-1}{2}x^{-3/2}\nR_2 = \\frac{f^3 C (x-4)^3}{3!}\n\n                                              d^3y/dx^3 = \\frac{1}{2}x^{-1}\\frac{-1}{2}x^{-3}\\frac{-3}{2}x^{-5/2}\n= \\frac{3}{32\\sqrt{2}} \\cdot \\frac{(2-4)^3}{3!}                                = \\frac{3x^{-5/2}}{8}   x=2 or 6\n                                              when x=2 = \\frac{3}{8}(2)^{-5/2}\n= \\frac{3}{32\\sqrt{2}} \\cdot \\frac{-8}{6}                = \\frac{3}{8}\\cdot\\frac{1}{(2^{1/2})^5} = \\frac{3}{8\\cdot4\\sqrt{2}} = \\frac{3}{32\\sqrt{2}}  max value\n\n= \\frac{1}{8\\sqrt{2}}                        when x=6 = \\frac{3}{8}\\cdot\\frac{1}{(6^{1/2})^5} = \\frac{3}{64\\sqrt{2}}\n\nQues 8 -> E\nx = t^3-12t    y = t^2-1\ndx/dt = 3t^2-12    dy/dt = 2t\n\ndy/dx = dx/dt x dt/dy\n\n= \\frac{3t^2-12}{2t} > 0\n3t^2-12>0\nt^2-4>0\n(t-2)(t+2)>0, t=2 or t=-2"
+    },
+    {
+      "filename": "calculus_p100.jpg",
+      "accuracy": 0.31726907630522083,
+      "word_overlap_recall": 0.373134328358209,
+      "confidence_mean": 0.8428451662713831,
+      "predicted_text": "Q12\u21920\n\nf(x) = Sin x\n\nRn=\n\n(n+1)!\n\n\u2193\n\n0\n\n=0\n\n0.001\n\n(+1)\n\nn+1\n\n(y2)+\n\n\u2264 0.001\n\n(G+1)!\n\nHell 3\n\n<0.001\n\nu\n\nCheer 4:\n\n\u22200.0\u221e0\n\n5\n\nQ13\n\nf = PA\n\nA.",
+      "expected_text": "Q12 -> D\nf(x) = sin x\n\nR_n = \\frac{f^{n+1}C \\cdot (x-a)^{n+1}}{(n+1)!}\n\n= \\frac{f^{n+1}C}{(n+1)!} x^{n+1} \\le 0.001\n\n\\frac{(1/2)^{n+1}}{(n+1)!} \\le 0.001\n\nCheck 3: \\frac{(1/2)^4}{4} < 0.001\n\nCheck 4: \\frac{(1/2)^5}{5} < 0.001\n\nQ13\nf = PA\n= log A\n= 4"
+    },
+    {
+      "filename": "econ_p60.jpg",
+      "accuracy": 0.35451505016722407,
+      "word_overlap_recall": 0.6666666666666666,
+      "confidence_mean": 0.8331780795540128,
+      "predicted_text": "C) Px =15\n\nPy=5\n\nmy= 6xy\n\nMux=3y2\n\n3\n\nPx = Mn\n\n=5=\n\n3=\n\nu\n\nPy\n\nmy\n\n8\n\nyon\n\nxe\n\nx9=h\n\nRxk+ARy=I\n\n1g= hg + x \n\nV=3xy^{2}\n\n3x+ y = 100\n\n2\n\n9x = 100\n\n=3(100\n\n600\n\n13366.67\n\ny=600\n\n9\n\nx:100\n\n9\n\n\\$\n\n9\n\n9\n\ninitial U=3xy2}\n\n:3(100)\n\n13383.3\n\n200\n\n6\n\n3\n\nQ1B>B 2\n\n14\u2192 B\n\nQ15\u2192C\u221a\n\nQ16\u21920",
+      "expected_text": "c) Px=15  Py=5\nMUx=3y^2  MUy=6xy\n\nPx/Py = MUx/MUy = 15/5 = 3y^2/6xy = 3 = y/2x\n= y = 6x\n\nPxX + PyY = I\n15x + 5y = 500\n\n3x + y = 100    U = 3xy^2\n9x = 100        = 3(100/9)(600/9)^2 = 13366.67\nx = 100/9  y = 600/9\n\ninitial  U = 3xy^2\n= 3(100/6)(300/3)^2 = 13383.3\n\nQ13 -> B\nQ14 -> B\nQ15 -> C\nQ16 -> D"
+    },
+    {
+      "filename": "politics_p40.jpg",
+      "accuracy": 0.3635187580853816,
+      "word_overlap_recall": 0.24793388429752067,
+      "confidence_mean": 0.728005228134302,
+      "predicted_text": "Economic Sanctions are not politically effective.\n\nWhy?\n\nTh an in crew es sup For the see ever La E\n\n2. Economic Scarcely cn increase the revive domestic paper of he sanctioned Got\n\n3. Sonchians often harm the most Vulnerable.  That no khat \u2192 Resolution 661\n\n2\n\nSmit embargo\n\nScionghtet?\n\nmost\n\njohn\n\nstinressinhigh\n\nUSE\n\ninnocent",
+      "expected_text": "Economic Sanctions are not politically effective.\nWhy?\n1. They can increase domestic support for the sanctioned regime [\"Rally Round the Flag Effect\"]\n2. Economic Scarcity can increase the relative domestic power of the sanctioned Gov\n3. Sanctions often harm the most Vulnerable. -> Iraq and Kuwait -> Resolution 661\nStrict embargo\n\nSanctions might exacerbate root causes?\n1. Even if economic sanctions can be made to work on an economic level that is to say that they weaken a state economically, the probability that they will stop the behaviour that led the sanction being invoked in the first place, is not reassuringly high\n\n2. Cause human rights problems rather than creating solutions. Economic sanctions can act as a form of collective punishment - Harming innocent"
     }
   ]
 }

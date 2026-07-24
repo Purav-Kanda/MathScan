@@ -30,6 +30,15 @@ class ShareRegion(BaseModel):
     latex: str
     type: str
     confidence: float | None = None
+    # WHY these two, added alongside inference.py's confidence-breakdown
+    # feature: without them, Pydantic would silently drop the fields when
+    # validating an incoming share request (undeclared fields are dropped,
+    # not preserved) -- a share link would then always render as if this
+    # breakdown didn't exist, even though the live app has it. Optional/
+    # defaulted so old, already-created share links (saved before this
+    # field existed) still validate fine when read back.
+    region_count: int | None = None
+    low_confidence_count: int | None = None
 
 
 class SharePage(BaseModel):
