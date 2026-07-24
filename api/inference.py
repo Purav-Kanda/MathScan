@@ -669,65 +669,57 @@ def _combine_regions_to_page(regions: list) -> str:
     return "".join(pieces)
 
 
+_MIN_PAGE_SIMILARITY_RATIO = 0.5
+
+
 def _page_correction_changed_too_much(original: str, corrected: str) -> bool:
     """
     Page-level counterpart to _correction_changes_too_much (the per-line
     guard).
 
-    WHY every 'insert'/'delete' opcode is rejected outright, not just
-    checked against an aggregate word-count-drift percentage: an earlier
-    version of this function ONLY checked total word-count drift (allowing
-    up to 20%) plus per-word similarity on 'replace' opcodes. A real live
-    test found the gap this left: the model INSERTED three brand-new words
-    ("/", "→", "Chopper") into an otherwise-correct sentence --
-    difflib categorizes a pure insertion as an 'insert' opcode, not
-    'replace', so the per-word similarity check never even looked at it.
-    The 3-word insertion was only ~11% of that page's total word count,
-    comfortably under the 20% aggregate threshold -- diluted by the rest of
-    the unchanged page, the exact same "diluted across a long page" problem
-    already solved for hallucinated word SWAPS, just not yet for word
-    ADDITIONS. Verified directly against the real strings before fixing
-    (see api/tests/test_inference.py) that this was genuinely an 'insert'
-    opcode, not a 'replace'.
+    HISTORY, kept because it explains why this function exists at all: an
+    early version only checked aggregate word-count drift (allowing up to
+    20%) plus per-word similarity on 'replace' opcodes, and missed a real
+    live incident where Groq INSERTED three brand-new words ("/", "->",
+    "Chopper") into an otherwise-correct sentence -- a pure insertion,
+    diluted to ~11% of that page's word count, comfortably under the old
+    threshold. The fix at the time was to reject ANY insert/delete opcode
+    outright, word-count-exact-match-or-nothing.
 
-    The fix is simple and strict, and matches the prompt's own contract
-    (_correct_full_page explicitly tells the model not to add or remove
-    words): ANY insert or delete -- any word-count change at all, anywhere
-    in the page -- rejects the whole correction. Only 'replace' opcodes
-    (an existing word swapped for a different word, count unchanged) are
-    still allowed, gated by the same per-word character-similarity check as
-    before. This is stricter than the original per-line guard's exact-
-    word-count-match rule in spirit but identical in effect: no case where
-    the corrected page has a different word count than the original is
-    ever accepted, full stop -- there is no longer an aggregate-percentage
-    loophole for either insertions or deletions to hide in.
+    That word-exact version was later found to be too strict in the
+    opposite direction: it also blocked legitimate fixes needing an added
+    or removed word -- e.g. raw OCR text reading "lecture chopper 2" where
+    the handwriting said "Chapter 2" needs both a word swap AND dropping a
+    stray word, which a strict word-count match can't distinguish from a
+    hallucination.
+
+    CURRENT POLICY (deliberate product decision): prioritize actually
+    fixing OCR errors -- including ones that need words added, removed, or
+    reworded so the grammar/math makes sense -- over guaranteeing zero risk
+    of an inserted word. This function is now a much looser last-resort net:
+    it only rejects a correction that is largely UNRELATED to the original
+    page (Groq effectively ignoring the actual content and writing
+    something else), via a character-level similarity ratio, not a
+    word-by-word audit. A flat refusal or degenerate repeated padding are
+    still caught separately, before this function ever runs, by
+    _looks_like_llm_refusal and _looks_like_repetition_garbage -- this is
+    the least strict of several layers, not the only one.
+
+    WHY 0.5 specifically: checked against real cases (see
+    api/tests/test_inference.py) -- every legitimate fix tried, including
+    the original 3-word "Chopper" insertion incident itself, scores well
+    above 0.6; a genuinely unrelated rewrite scores under 0.3. 0.5 sits
+    comfortably in the gap between those two clusters.
     """
     import difflib
-    import itertools
 
-    orig_words = original.split()
-    corr_words = corrected.split()
+    if not original.strip():
+        return False
+    if not corrected.strip():
+        return True  # Groq returning nothing is never an acceptable "fix"
 
-    matcher = difflib.SequenceMatcher(a=orig_words, b=corr_words, autojunk=False)
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            continue
-        if tag in ("insert", "delete"):
-            return True
-        # tag == "replace": same length or not, still a word-for-word swap
-        # attempt -- gated by per-word similarity, same as the per-line
-        # guard (_correction_changes_too_much).
-        for orig_word, corr_word in itertools.zip_longest(
-            orig_words[i1:i2], corr_words[j1:j2], fillvalue=""
-        ):
-            o = orig_word.strip(".,;:!?()[]").lower()
-            c = corr_word.strip(".,;:!?()[]").lower()
-            if o == c:
-                continue
-            similarity = difflib.SequenceMatcher(a=o, b=c).ratio()
-            if similarity < 0.5:
-                return True
-    return False
+    ratio = difflib.SequenceMatcher(None, original, corrected).ratio()
+    return ratio < _MIN_PAGE_SIMILARITY_RATIO
 
 
 def _correct_full_page(page_text: str) -> str:
@@ -769,8 +761,14 @@ def _correct_full_page(page_text: str) -> str:
         "just because it reads better -- only fix it if it looks like a "
         "misread of the SAME word. Do NOT add, remove, or rebalance LaTeX "
         "braces/brackets/delimiters. Do NOT invent or pad content you "
-        "cannot read. Preserve the exact line structure, paragraph "
-        "breaks, and all \\[ \\] / $ $ delimiters exactly as given.\n\n"
+        "cannot read. If the OCR text contains an extra, duplicated, or "
+        "nonsensical stray word that clearly does not belong (for example "
+        "'lecture chopper 2' where the rest of the page makes clear it "
+        "should be 'Chapter 2'), you may remove that one stray word -- but "
+        "only when it is obviously spurious, and never more than one or "
+        "two such words on the whole page. Preserve the exact line "
+        "structure, paragraph breaks, and all \\[ \\] / $ $ delimiters "
+        "exactly as given.\n\n"
         f"If nothing on the page needs fixing, respond with EXACTLY this "
         f"single word and nothing else: {_LLM_NO_CHANGE_TOKEN}\n\n"
         "Otherwise return ONLY the corrected page, no explanation.\n\n"

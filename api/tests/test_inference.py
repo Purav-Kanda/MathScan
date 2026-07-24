@@ -717,22 +717,22 @@ def test_combine_regions_to_page_keeps_good_regions_when_one_is_broken():
     )
 
 
-def test_page_correction_changed_too_much_catches_real_insertion_failure():
-    # WHY this exact case: the real Groq response from a live test --
-    # inserting the brand-new words "/", "→", "Chopper" into an
-    # otherwise-correct sentence. An earlier version of this guard only
-    # checked total word-count drift as a PERCENTAGE of the whole page,
-    # which this 3-word insertion stayed comfortably under once diluted
-    # across a realistic full page -- see the function's docstring. This
-    # confirms the fix: any insert/delete opcode is now rejected outright,
-    # regardless of how small a fraction of the page it represents.
+def test_page_correction_now_allows_the_historical_chopper_insertion_case():
+    # WHY this is a DELIBERATE policy reversal, not a regression: this exact
+    # case (Groq inserting "/", "→", "Chopper" into an otherwise-correct
+    # sentence) used to be the one thing this guard existed to reject. Per
+    # an explicit later product decision, prioritizing actually-fixed pages
+    # over zero-insertion-risk means this now needs to be ALLOWED, since
+    # rejecting it means the whole page's correction gets thrown out for
+    # one small, plausible-looking addition. The character-similarity ratio
+    # for this case is ~0.96 -- nowhere near "unrelated content."
     page_original = (
         "Sept lecture 2 : Basics of Supply and Demand . 2.1 to 2.4 2.1 : "
         "Supply and Demand man to for hon in d vi diva is illegal "
         "tobingaee holding constant other factors ."
     )
     page_hallucinated = page_original.replace("lecture 2", "lecture / → Chopper 2")
-    assert inference._page_correction_changed_too_much(page_original, page_hallucinated) is True
+    assert inference._page_correction_changed_too_much(page_original, page_hallucinated) is False
 
 
 def test_page_correction_changed_too_much_allows_word_for_word_swaps():
@@ -741,13 +741,34 @@ def test_page_correction_changed_too_much_allows_word_for_word_swaps():
     assert inference._page_correction_changed_too_much(page_original, page_fixed) is False
 
 
-def test_page_correction_changed_too_much_rejects_any_word_count_change():
-    # WHY: the tightened guard is deliberately strict -- even a SINGLE word
-    # added or removed anywhere on the page rejects the whole correction,
-    # matching _correct_full_page's own prompt instruction not to add or
-    # remove words at all.
-    assert inference._page_correction_changed_too_much("a b c", "a b c d") is True
-    assert inference._page_correction_changed_too_much("a b c d", "a b c") is True
+def test_page_correction_changed_too_much_allows_the_lecture_chopper_fix():
+    # WHY this matters: raw OCR text hallucinating "lecture chopper 2" for
+    # handwritten "Chapter 2" needs Groq to both swap a word AND drop a
+    # stray one -- exactly the kind of multi-word fix the old word-count-
+    # exact-match rule couldn't distinguish from a bad hallucination.
+    page_original = "Sept lecture chopper 2 : Basics of Supply and Demand ."
+    page_fixed = "Sept Chapter 2 : Basics of Supply and Demand ."
+    assert inference._page_correction_changed_too_much(page_original, page_fixed) is False
+
+
+def test_page_correction_changed_too_much_allows_a_grammar_fixing_insertion():
+    # WHY: the explicit product decision was "I don't mind Groq adding
+    # words to make the grammar make sense" -- this is that exact case.
+    page_original = "The cat sat mat"
+    page_fixed = "The cat sat on the mat"
+    assert inference._page_correction_changed_too_much(page_original, page_fixed) is False
+
+
+def test_page_correction_changed_too_much_still_rejects_a_wholesale_unrelated_rewrite():
+    # WHY a floor still has to exist even under the looser policy: if Groq
+    # effectively ignores the page and returns unrelated text (a
+    # similarity ratio of ~0.29 here), that's not "fixing OCR errors" by
+    # any reasonable definition -- it's the model failing to engage with
+    # the actual content at all, which every layer of correction in this
+    # file (refusal detection, repetition detection, this) exists to catch.
+    page_original = "Sept lecture 2 : Basics of Supply and Demand . 2.1 to 2.4"
+    page_hallucinated = "The quick brown fox jumps over the lazy dog repeatedly in the forest today"
+    assert inference._page_correction_changed_too_much(page_original, page_hallucinated) is True
 
 
 def test_recognize_page_always_collapses_to_one_page_level_region(monkeypatch):
