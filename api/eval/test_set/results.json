@@ -1,15 +1,15 @@
 {
-  "mean_accuracy": 0.32158933107501186,
-  "mean_word_overlap_recall": 0.5216428152438628,
+  "mean_accuracy": 0.3300877732712483,
+  "mean_word_overlap_recall": 0.5052531243883521,
   "target": 0.8,
   "passed": false,
-  "sample_size": 15,
-  "failed_images": [
-    "calculus_p40.jpg"
-  ],
+  "sample_size": 16,
+  "failed_images": [],
   "try_fallback": true,
   "apply_contrast": false,
   "resized_shape": 768,
+  "workers": 1,
+  "timeout": 900,
   "per_image": [
     {
       "filename": "politics_p15.jpg",
@@ -29,19 +29,27 @@
     },
     {
       "filename": "econ_p15.jpg",
-      "accuracy": 0.4336734693877551,
-      "word_overlap_recall": 0.797752808988764,
+      "accuracy": 0.4387755102040817,
+      "word_overlap_recall": 0.8089887640449438,
       "confidence_mean": 0.8729607065518697,
-      "predicted_text": "Tutorial Questions\n\nPrice \\$)\n\nEves 6\n\nRED=\n\n2\n\n\u2460=240-4P\n\nPER=1\n\na) 80\n\nb)\n\n240-49=0\n\n\u2192Oly.D\n\nPER:0\n\nAP=240\n\nP=\\$60\n\nC)\n\n0d  240- 4(40)\n\n\\$ 30\n\nd) Elasticity = slope\n\nNice\n\nod\n\n-80\n\nAD\n\n2\n\nxx\n\n80\n\nEves 7\n\nelasticity of demand=-0.076\n\nE= slope Price\n\nQd\n\nof Supply = 0.088\n\n-0.076= a x 30\n\na=-0\u00b7060\n\nelasticity\n\n23.84\n\ny: mx+c\n\nDemand cute linear\n\n23.84=0.060(30)+C\n\nOD = a+ bP\n\nQ0 - bP = a\n\n23.8u - (-0.060\u00d730)=a\n\nQ:25.6u0\n\nQn = 25.640-0.0609",
+      "predicted_text": "Tutorial Questions\n\nPrice \\$)\n\nEves 6\n\nRED=\n\n2\n\n\u2460=240-4P\n\nPER=1\n\na) 80\n\nb)\n\n240-49=0\n\n\u2192Oly.D\n\nPER:0\n\nAP=240\n\nP=\\$60\n\nC)\n\n0d  240- 4(40)\n\n\\$ 30\n\nd) Elasticity = slope\n\nNice\n\nod\n\n-80\n\nAD\n\n2\n\nxx\n\n80\n\nEves 7\n\nelasticity of demand=-0.076\n\nE= slope Price\n\nQd\n\nof Supply = 0.088\n\n-0.076= a x 30\n\na=-0\u00b7060\n\nelasticity\n\n23.84\n\ny: mx+c\n\nDemand curve linear\n\n23.84=0.060(30)+C\n\nOD = a+ bP\n\nQ0 - bP = a\n\n23.8u - (-0.060\u00d730)=a\n\nQ:25.6u0\n\nQn = 25.640-0.0609",
       "expected_text": "Tutorial Questions\nQues 6\nQ = 240 - 4P\na) $0\nb) 240 - 4P = 0\n4P = 240\nP = $60\n\nc) $30  d) Elasticity = slope x Price/Qd\nQd = 240 - 4(40)\n= 80\n= 2 x 40/80 = 2\n\nQues 7\nelasticity of demand = -0.076\nE = slope x Price/Qd\nelasticity of supply = 0.088\n-0.076 = a x 30/23.84\na = -0.060\n\nDemand curve linear\ny = mx + c\nQd = a + bP\nQd - bP = a\n23.84 - (-0.060 x 30) = a\na = 25.640\nQd = 25.640 - 0.060P"
     },
     {
       "filename": "calculus_p25.jpg",
-      "accuracy": 0.04272517321016167,
-      "word_overlap_recall": 0.4729064039408867,
-      "confidence_mean": 0.7082405233612428,
-      "predicted_text": "$\\sqrt{x^{5}-2}$ $\\mathbf{d} \\mathbf{x}$ $x^{8}-a \\leq x^{8}$\n$\\Rightarrow\\sqrt{x^{8}-2} < \\sqrt{x^{8}}=x^{4}$\n$\\chi^{6}$\nCtaep $\\sqrt{x^{8}-2}$ $< \\underbrace{x^{4}}$ : $\\chi^{-2}$\n$\\chi^{\\mathbf{b}}$ $\\chi^{\\iota}$\n(naoN $\\boldsymbol{2}$ .ow $\\mathcal{g}^{\\varrho}$\n\n) $\\S_{\\omicron}^{\\pi_{l}}$ :u $\\mathbf{d} \\mathbf{x}$ $\\frac{\\cdot\\hbar} {\\cdot\\hbar} \\theta\\theta$ $2-(-1 )=3$\n$2-1=1$\n$\\boldsymbol{n}^{\\boldsymbol{\\imath} \\boldsymbol{\\imath}_{2}}$\n$- 1 \\leq\\sin\\left( x \\right) \\leq1$\nA $\\frac{2-\\sin( x )} {x^{\\prime}_{2}} \\leq\\frac{3} {x^{\\prime}_{2}}$\n3x*\"^sx\n$= 3 ( \\frac{x^{y_{2}}} {y_{2}}+c ) \\vert^{n_{y_{2}}}=3 ( 2 ( y_{2} )^{y_{2}}+c-( 0+c ) )$ LaALa $\\mathbf{C o v e r g e g e g}$\n$\\mathbf{Q}_{1}=1$ $\\mathrm{o f} \\setminus\\mathbf{a_{n}} \\rfloor$ ue 41, a $\\mathbf{l+a_{n}}$ $\\left\\{\\alpha_{\\alpha} \\right\\}$ n $\\{^{1, 2}_{2}, 3, 1 \\cdots\\}$\nind $\\mathbf{H}_{\\mathbf{q}}$ ${\\bf8_{d n}}$ $\\frac{\\pi a h \\pi\\theta} {\\pi a}$\nTnfom a $\\Omega\\in{\\bf N}$\n\n$\\alpha_{\\mathbf{q}}$ . $8_{0}$ $\\mathbf{l+\\omega}$ $\\boldsymbol{\\mathcal{Q}}$ `\n$\\mathbf{l} \\mathbf{+} \\mathbf{q}_{\\mathbf{I}}$ \u00b7:4",
+      "accuracy": 0.233256351039261,
+      "word_overlap_recall": 0.45320197044334976,
+      "confidence_mean": 0.8554333006182024,
+      "predicted_text": "08\n\n^-a\u2264x{\n\n11)\n\n8\n\nx^2-2\n\ndx\n\nx6\n\n\u21d2\u221ax{2-2<\u221ax{\u00b2}=x{4}\n\nx^{2dx= -x^{}+c\n\n100\n\nx^{2-2\n\n=x2\n\nx6\n\nx6\n\n12\n\nhim\n\n=1+c\n\nConverges\n\nx0\n\nn\n\n2\n\n2\n\n1\u03c0/2\n\n)\n\n2-sin(x) dx\n\n2-1=1\n\nn2\n\n2-(-1)=3\n\nJo\n\n7\n\n-1 \u2264 Sin(x)\u22641\n\n2-Sin(x) \u22643\n\n/2\n\n-12 dx\n\n1/2\n\nn\n\n3x\n\n\u03c0\n\n\u03c0/2\n\n=3(2(\\%)2+c-(0+c))\n\n1/2\n\n+C\n\n3\n\nn\n\n/2\n\n10\n\n2 \u03c0= 3\u221a2\u03c0\u2234cover\n\n\u221a2}\n\nHomework a\n\nProblem 2\n\nan} coverage. ne \n\nfind the limit of an urea 1 8\n\n212\n\n1+ a{n}\n\na1=1\n\n=8(1) = 8=4\n\na2\u00b0\n\n8a\n\n1+a1}\n\n1+1\n\n2",
       "expected_text": "11) \\int_2^\\infty \\frac{\\sqrt{x^8-2}}{x^6} dx    x^8-2 \\le x^8\n\\Rightarrow \\sqrt{x^8-2} < \\sqrt{x^8} = x^4\n\n\\int_2^\\infty x^{-2} dx = -x^{-1}+C \\Big|_2^\\infty    \\frac{\\sqrt{x^8-2}}{x^6} < \\frac{x^4}{x^6} = x^{-2}\n\n= (\\lim_{x \\to \\infty} \\frac{-1}{x}+C) - (\\frac{-1}{2}+C) = \\frac{1}{2}  converges\n\n111) \\int_0^{\\pi/2} \\frac{2-\\sin(x)}{x^{1/2}} dx    2-1=1\n                                                      2-(-1)=3\n-1 \\le \\sin(x) \\le 1\n\\frac{2-\\sin(x)}{x^{1/2}} \\le \\frac{3}{x^{1/2}}\n\\int_0^{\\pi/2} 3x^{-1/2} dx\n\n= 3(\\frac{x^{1/2}}{1/2}+C)\\Big|_0^{\\pi/2}    = 3(2(\\pi/2)^{1/2}+C - (0+C))\n\n= 3(2\\frac{\\sqrt{\\pi}}{\\sqrt{2}}) = 3\\sqrt{2\\pi}  \\therefore converges\n\nHomework 2\nProblem 2\nfind the limit of {a_n} where a_1 = 1, a_{n+1} = \\frac{8a_n}{1+a_n}  {a_n} converges. n \\in N = {1,2,3,4...}\n\na_1 = 1\na_2 = \\frac{8a_1}{1+a_1} = \\frac{8(1)}{1+1} = \\frac{8}{2} = 4"
+    },
+    {
+      "filename": "calculus_p40.jpg",
+      "accuracy": 0.3207547169811321,
+      "word_overlap_recall": 0.5190839694656488,
+      "confidence_mean": 0.8475371328768907,
+      "predicted_text": "-d\n\nSeries\n\n8\n\nwith one's\n\nof\n\n1<0\n\n1\n\n\u2229=1\n\nnP\n\n\u00a3example\n\nCompare\n\n8\n\n1\n\nn=1\n\n\u2229=1\n\nn2\n\n^2+1\n\ncon. p series\n\nP=2>1\n\nNote\n\nthat\n\nboth terms are\n\n0\n\nfor\n\nn\u22651\n\n^2+1\n\nincreasing, so both S{n\n\nn^{2\n\nare increasing.\n\n8\n\n80 the Sn of\n\nsatisfies\n\nn=1\n\nn^{2+1\n\n7\n\nSn =\n\nM\n\n1\n\n\u2229=1\n\nn=1\n\nn=1\n\nia\n\nn^{21}\n\ni^{2+1\n\nconverges\n\nis banded, increasing\n\nmonotonic, : convergent.\n\nSO Sn\n\n8\n\nConverges.\n\nn=1\n\nn^{2+1",
+      "expected_text": "P-series\n\\sum_{n=1}^\\infty \\frac{1}{n^P}  which converges for p>1\n\nExample\nCompare\n\\sum_{n=1}^\\infty \\frac{1}{n^2}          \\sum_{n=1}^\\infty \\frac{1}{n^2+1}\nconv. p series\np=2>1\n\n0 < \\frac{1}{n^2+1} < \\frac{1}{n^2}  for n \\ge 1    Note that both terms are increasing, so both S_n are increasing.\n\nSo the S_n of \\sum_{n=1}^\\infty \\frac{1}{n^2+1} satisfies\nS_n = \\sum_{n=1}^n \\frac{1}{i^2+1} < \\sum_{n=1}^n \\frac{1}{i^2} < \\sum_{n=1}^\\infty \\frac{1}{n^2} = \\pi^2/6\nconverges\n\nSo S_n is bounded, increasing monotonic, therefore convergent.\n\\sum_{n=1}^\\infty \\frac{1}{n^2+1}  converges."
     },
     {
       "filename": "calculus_p55.jpg",
@@ -101,10 +109,10 @@
     },
     {
       "filename": "calculus_p85.jpg",
-      "accuracy": 0.25077399380804954,
-      "word_overlap_recall": 0.7777777777777778,
-      "confidence_mean": 0.7424638248406924,
-      "predicted_text": "0a7st\n$\\frac{3 y^{\\prime}} {3 \\alpha\\sqrt{2}}$ 2 $\\frac{-8} {\\kappa_{2}}^{l}$ Wa ea $y=x^{\\prime}_{2}$ $\\mathbf{s}$ 3X $\\vert x=2 o r 6$\n$R_{n}=\\frac{f^{( n+1 )} C} {( n+1 )!} ( x-a )^{n+1}$ $\\frac{d^{3} y} {d x^{3}}=\\frac{1} {2} \\times\\frac{-1} {2} x-\\frac{3 x} {2}^{-9}_{2}$ 8 e\n\n$R_{2}=\\frac{f^{3} C ( x-4 )^{3}} {3!}$ $\\frac{d^{2} y} {d x^{2}}=\\frac{1} {2} x-\\frac{1} {2} x^{-3 x}$\n\n. $\\frac{3} {3 2 \\sqrt{2}} \\cdot\\frac{( 2-4 )^{3}} {3!}$ $3. ( 2 )^{-5 / 2}$\n\n$\\frac{3} {8} \\cdot\\frac{1} {( 2^{1 2} )^{5}}=\\frac{3} {8 \\cdot4 \\sqrt{2}}=\\textcircled{\\frac{3} {3 2 \\sqrt{2}}} m o n$\n7 $\\overbrace{\\frac{1} {8 \\sqrt{2}}}^{1}$ $\\lim x=6=\\frac{3} {8} \\frac{1} {( 6 )^{2}}=\\frac{3} {6 4 \\sqrt{2}}$\n\n$\\cos8 \\rightarrow2$\n$x=t^{3}-1 2 t$ $y=t^{2}-1$\n$d x=3 t^{2}-1 2$ $\\frac{d y} {d t}=2 t$\n$\\mathrm{d t}$\n$\\frac{\\Im\\ub( \\alpha)} {\\Im\\alpha}$ \uff1a\n$\\mathsf{d} t \\mathsf{d} y$\n: $3 t^{2}-1 2 > 0$\n$\\mathrm{a l}$ $3 t^{2}-1 2 > 0$\n$b^{2} \\cdot4 > 0$\n(+2){ta)a,ha\\&t-2",
+      "accuracy": 0.19195046439628483,
+      "word_overlap_recall": 0.5265700483091788,
+      "confidence_mean": 0.8829646831013492,
+      "predicted_text": "waves 7\u2192 A\n\n1/2\n\nx\n\n(+1)\n\nRn=\n\nn+1\n\n(x-a)\n\n1\n\nC\n\ndy\n\n\u22a5x\n\n2\n\n(n+1)!\n\ndo\n\n2\n\n-3/2\n\ndy\n\n=\n\nn\n\ndx2}\n\n2\n\n2\n\n2\n\n3\n\n2\n\n2\n\n31\n\n-5/2\n\n-1x-3x\n\ndn3\n\n2\n\n2\n\n2\n\n-5/2\n\n3\n\n(2-4){3\n\n3\n\nx=2 or6\n\n3x\n\n=\n\n32\u221a2\n\n31\n\n8\n\n-5/2\n\nWhen x=2 =\n\n(2)\n\n3\n\n8\n\n31\n\n3\n\n3\n\n-8\n\n=\n\namok\n\n3\n\n22)\n\n257.8\n\n82\n\n32\u221a2\n\n\u221a2\n\n8\n\nvalve\n\n4\n\nWhen x=6 = 3.1\n\n\u3001\n\n3\n\n8\u221a2\n\n(6)\n\n64\u221a2\n\n8\n\nQuest 8 \u2192 C\n\nx=t2-12t\n\ny=t2-1\n\ndx\n\ndy\n\n=2t\n\ndt\n\ndt\n\ndy\n\ndx\n\ndx\n\ndt\n\ndy\n\n=3t2-12\n\n>0\n\n2t\n\n2\n\n3t\n\n-12>0\n\n1{2}4>0\n\n2 t 2 0 5 2 ort 2",
       "expected_text": "Ques 7 -> A\ny = x^{1/2}\nR_n = \\frac{f^{(n+1)}C (x-a)^{n+1}}{(n+1)!}    dy/dx = \\frac{1}{2}x^{-1/2}\n                                              d^2y/dx^2 = \\frac{1}{2}x^{-1}\\frac{-1}{2}x^{-3/2}\nR_2 = \\frac{f^3 C (x-4)^3}{3!}\n\n                                              d^3y/dx^3 = \\frac{1}{2}x^{-1}\\frac{-1}{2}x^{-3}\\frac{-3}{2}x^{-5/2}\n= \\frac{3}{32\\sqrt{2}} \\cdot \\frac{(2-4)^3}{3!}                                = \\frac{3x^{-5/2}}{8}   x=2 or 6\n                                              when x=2 = \\frac{3}{8}(2)^{-5/2}\n= \\frac{3}{32\\sqrt{2}} \\cdot \\frac{-8}{6}                = \\frac{3}{8}\\cdot\\frac{1}{(2^{1/2})^5} = \\frac{3}{8\\cdot4\\sqrt{2}} = \\frac{3}{32\\sqrt{2}}  max value\n\n= \\frac{1}{8\\sqrt{2}}                        when x=6 = \\frac{3}{8}\\cdot\\frac{1}{(6^{1/2})^5} = \\frac{3}{64\\sqrt{2}}\n\nQues 8 -> E\nx = t^3-12t    y = t^2-1\ndx/dt = 3t^2-12    dy/dt = 2t\n\ndy/dx = dx/dt x dt/dy\n\n= \\frac{3t^2-12}{2t} > 0\n3t^2-12>0\nt^2-4>0\n(t-2)(t+2)>0, t=2 or t=-2"
     },
     {
