@@ -828,6 +828,31 @@ def test_page_correction_changed_too_much_still_rejects_a_wholesale_unrelated_re
     assert inference._page_correction_changed_too_much(page_original, page_hallucinated) is True
 
 
+def test_page_correction_rejects_a_single_line_replaced_with_unrelated_content():
+    # WHY this exact case: a real live export replaced a genuinely garbled
+    # but real definition line ("Demand: amt of good which an individual
+    # is willing and able to buy during a given time period") with a
+    # completely different, fluent-sounding but WRONG phrase ("man to for
+    # hon in d vi diva is illegitamate tobingaee"). The whole-page-ratio-
+    # only version of this guard (a prior revision) missed this: one bad
+    # line out of a long page barely moves the page-wide similarity ratio.
+    # Confirms the per-chunk rewrite catches it -- this specific replace
+    # opcode is 8+ words with low chunk-level similarity, well past the
+    # 5-word freely-allowed size.
+    page_original = (
+        "8 Sept lecture / -> Chapter 2 : Basics of Supply and Demand . "
+        "2.1 to 2.4 2.1 : Supply and Demand Demand : amt of good which "
+        "an individual is willing and able to buy during a given time "
+        "period , holding constant other factors ."
+    )
+    page_hallucinated = (
+        "1 Sept lecture / -> Chapter 2 : Basics of Supply and Demand . "
+        "2.1 to 2.4 2.1 : Supply and Demand man to for hon in d vi diva "
+        "is illegitamate tobingaee holding constant other factors ."
+    )
+    assert inference._page_correction_changed_too_much(page_original, page_hallucinated) is True
+
+
 def test_recognize_page_always_collapses_to_one_page_level_region(monkeypatch):
     # WHY this test replaces the old per-region gating test (M6.5): Groq
     # correction no longer runs per-region at all -- it runs ONCE per page,

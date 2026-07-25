@@ -669,7 +669,13 @@ def _combine_regions_to_page(regions: list) -> str:
     return "".join(pieces)
 
 
-_MIN_PAGE_SIMILARITY_RATIO = 0.5
+# Small edits (a word swapped, one or two words added/dropped for grammar)
+# are always allowed, no matter how dissimilar the words themselves look --
+# that's the whole point of the "fix by any means" policy below. A chunk
+# bigger than this is treated as a real content decision, not a nudge, and
+# has to actually resemble what was there before.
+_MAX_FREELY_ALLOWED_CHUNK_WORDS = 5
+_MIN_LARGE_CHUNK_SIMILARITY = 0.5
 
 
 def _page_correction_changed_too_much(original: str, corrected: str) -> bool:
@@ -677,39 +683,44 @@ def _page_correction_changed_too_much(original: str, corrected: str) -> bool:
     Page-level counterpart to _correction_changes_too_much (the per-line
     guard).
 
-    HISTORY, kept because it explains why this function exists at all: an
-    early version only checked aggregate word-count drift (allowing up to
-    20%) plus per-word similarity on 'replace' opcodes, and missed a real
-    live incident where Groq INSERTED three brand-new words ("/", "->",
-    "Chopper") into an otherwise-correct sentence -- a pure insertion,
-    diluted to ~11% of that page's word count, comfortably under the old
-    threshold. The fix at the time was to reject ANY insert/delete opcode
-    outright, word-count-exact-match-or-nothing.
+    HISTORY, kept because it explains why this function exists at all and
+    keeps getting revised: an early version only checked aggregate word-
+    count drift (allowing up to 20%) plus per-word similarity on 'replace'
+    opcodes, and missed a real live incident where Groq INSERTED three
+    brand-new words ("/", "->", "Chopper") into an otherwise-correct
+    sentence -- diluted to ~11% of that page's word count, comfortably
+    under the old threshold. The fix at the time: reject ANY insert/delete
+    opcode outright, word-count-exact-match-or-nothing.
 
-    That word-exact version was later found to be too strict in the
-    opposite direction: it also blocked legitimate fixes needing an added
-    or removed word -- e.g. raw OCR text reading "lecture chopper 2" where
-    the handwriting said "Chapter 2" needs both a word swap AND dropping a
-    stray word, which a strict word-count match can't distinguish from a
-    hallucination.
+    That word-exact version was too strict in the opposite direction --
+    it also blocked legitimate fixes needing an added/removed word, e.g.
+    raw OCR text reading "lecture chopper 2" where the handwriting said
+    "Chapter 2" (needs a word swap AND dropping a stray word). Replaced
+    with a single whole-page character-similarity ratio (0.5) instead, per
+    an explicit product decision to prioritize fixing errors over zero
+    insertion risk.
 
-    CURRENT POLICY (deliberate product decision): prioritize actually
-    fixing OCR errors -- including ones that need words added, removed, or
-    reworded so the grammar/math makes sense -- over guaranteeing zero risk
-    of an inserted word. This function is now a much looser last-resort net:
-    it only rejects a correction that is largely UNRELATED to the original
-    page (Groq effectively ignoring the actual content and writing
-    something else), via a character-level similarity ratio, not a
-    word-by-word audit. A flat refusal or degenerate repeated padding are
-    still caught separately, before this function ever runs, by
-    _looks_like_llm_refusal and _looks_like_repetition_garbage -- this is
-    the least strict of several layers, not the only one.
+    That ratio-only version turned out to have its OWN real gap, found by
+    testing an actual live export: a single badly-garbled LINE got replaced
+    with a completely different, fluent-sounding but WRONG phrase (a real
+    definition sentence turned into unrelated nonsense), and the page-wide
+    ratio barely moved because the rest of a long page was untouched --
+    the exact same "diluted across a long page" blind spot the very first
+    version of this guard had, just for a big single-line rewrite instead
+    of a small scattered insertion.
 
-    WHY 0.5 specifically: checked against real cases (see
-    api/tests/test_inference.py) -- every legitimate fix tried, including
-    the original 3-word "Chopper" insertion incident itself, scores well
-    above 0.6; a genuinely unrelated rewrite scores under 0.3. 0.5 sits
-    comfortably in the gap between those two clusters.
+    CURRENT POLICY: operate per contiguous changed chunk, not per word or
+    per whole page. Small chunks (word swaps, a dropped/added word or two
+    -- <= 5 words) are always allowed, exactly as before, so ordinary
+    grammar/character-misread fixes still go through freely. A LARGER
+    chunk must still actually resemble the text it's replacing (character
+    similarity >= 0.5) -- catches both a wholesale-unrelated full-page
+    rewrite AND a single line getting confidently replaced with unrelated
+    invented content, without blocking the small, legitimate edits this
+    guard was loosened to allow in the first place. Verified against every
+    real case on file, including the two real incidents above and the
+    real hallucinated-definition case that motivated this rewrite (see
+    api/tests/test_inference.py).
     """
     import difflib
 
@@ -718,8 +729,22 @@ def _page_correction_changed_too_much(original: str, corrected: str) -> bool:
     if not corrected.strip():
         return True  # Groq returning nothing is never an acceptable "fix"
 
-    ratio = difflib.SequenceMatcher(None, original, corrected).ratio()
-    return ratio < _MIN_PAGE_SIMILARITY_RATIO
+    orig_words = original.split()
+    corr_words = corrected.split()
+
+    matcher = difflib.SequenceMatcher(a=orig_words, b=corr_words, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        chunk_size = max(i2 - i1, j2 - j1)
+        if chunk_size <= _MAX_FREELY_ALLOWED_CHUNK_WORDS:
+            continue
+        orig_chunk = " ".join(orig_words[i1:i2])
+        corr_chunk = " ".join(corr_words[j1:j2])
+        similarity = difflib.SequenceMatcher(None, orig_chunk, corr_chunk).ratio()
+        if similarity < _MIN_LARGE_CHUNK_SIMILARITY:
+            return True
+    return False
 
 
 def _correct_full_page(page_text: str) -> str:
