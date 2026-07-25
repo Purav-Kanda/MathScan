@@ -1050,7 +1050,6 @@ def recognize_page(
     apply_contrast: bool = False,
     resized_shape: int = 768,
     try_fallback: bool = False,
-    fallback_threshold: float = 0.70,
 ) -> dict:
     """
     Recognize math/text regions in one image.
@@ -1088,14 +1087,37 @@ def recognize_page(
     underlying TrOCR decoder directly, out of scope for v1.
 
     WHY try_fallback defaults to False, not True: api/tests/test_inference.py
-    fakes low-confidence pages (e.g. a 0.66 mean, below fallback_threshold's
-    default 0.70) to test the confidence-averaging logic in isolation --
-    with try_fallback defaulting on, those tests would also try to import
-    and run real PaddleOCR, which isn't installed in the CI environment on
-    purpose (it's a heavy, opt-in dependency -- see requirements-fallback.txt).
-    routers/ocr.py's real endpoints explicitly pass try_fallback=True; tests
-    and any other caller get today's exact Pix2Text-only behavior unless
-    they ask for the fallback.
+    fakes Pix2Text's output to test the confidence-averaging/comparison logic
+    in isolation -- with try_fallback defaulting on, those tests would also
+    try to import and run real PaddleOCR, which isn't installed in the CI
+    environment on purpose (it's a heavy, opt-in dependency -- see
+    requirements-fallback.txt). routers/ocr.py's real endpoints explicitly
+    pass try_fallback=True; tests and any other caller get today's exact
+    Pix2Text-only behavior unless they ask for the fallback.
+
+    WHY PaddleOCR now runs UNCONDITIONALLY whenever try_fallback=True,
+    instead of only when confidence_mean is below a threshold (an earlier,
+    removed `fallback_threshold` parameter): a real page (politics_p15.jpg,
+    dense handwritten prose) got Pix2Text's own confidence at ~85% while it
+    was actually hallucinating garbage -- stray Chinese characters, jumbled
+    letter fragments -- content that a human or PaddleOCR would easily beat.
+    Since that confidence sat comfortably above any reasonable threshold,
+    the fallback never even got a chance to run on exactly the page that
+    needed it. Tried a cheaper alternative first (a pyspellchecker-based
+    "what fraction of words are real English words" gibberish detector) and
+    calibrated it against this real data before writing any product code --
+    it failed outright: the hallucinated text scored as MORE plausible
+    (2% unknown, mostly real short words in a nonsensical order) than a
+    genuinely fine calculus page (50% unknown, because isolated math
+    fragments like "sqrt" aren't English words). No cheap per-word heuristic
+    reliably tells these apart. The straightforward fix that actually works:
+    stop trying to predict in advance whether Pix2Text is wrong, and instead
+    always get a second opinion from PaddleOCR, then keep whichever result's
+    confidence is actually higher (comparison logic below, unchanged). The
+    real cost is honest and worth stating plainly: every request now pays
+    PaddleOCR's compute time and latency, not just ones Pix2Text already
+    flagged as low-confidence -- a deliberate accuracy-over-latency/cost
+    tradeoff, not an oversight.
     """
     if _p2t is None:
         raise RuntimeError("Model not loaded")
@@ -1150,19 +1172,19 @@ def recognize_page(
     confidence_mean = sum(scores) / len(scores) if scores else None
     result = {"regions": regions, "confidence_mean": confidence_mean}
 
-    # WHY compare against fallback_threshold and PICK THE HIGHER of the two
-    # confidences, not just "use PaddleOCR whenever confidence is low": on
-    # a page that's real math notation Pix2Text mis-scored for some other
-    # reason, Pix2Text may still be the better read even below threshold --
-    # this keeps the choice evidence-based per page rather than assuming
-    # one model always wins once triggered. Real testing (calculus page 3,
-    # api/eval/claude_vs_pix2text.py) found Pix2Text at 6-25% confidence
-    # producing Chinese-character hallucinations on dense handwritten prose,
-    # while PaddleOCR read the same page at 85% confidence with genuinely
-    # correct content -- but that comparison, not a blind swap, is what
-    # this mirrors.
-    needs_fallback = confidence_mean is None or confidence_mean < fallback_threshold
-    if try_fallback and needs_fallback:
+    # WHY unconditional (no confidence-based gate) and PICK THE HIGHER of
+    # the two confidences, not just "use PaddleOCR whenever confidence is
+    # low": see this function's docstring for why the gate was removed
+    # entirely (Pix2Text can be confidently wrong, and no cheap heuristic
+    # reliably predicts that in advance). Comparing both real results and
+    # keeping whichever one actually scores higher keeps the choice
+    # evidence-based per page, rather than trusting either model blindly.
+    # Real testing (calculus page 3, api/eval/claude_vs_pix2text.py) found
+    # Pix2Text at 6-25% confidence producing Chinese-character
+    # hallucinations on dense handwritten prose, while PaddleOCR read the
+    # same page at 85% confidence with genuinely correct content -- but
+    # that comparison, not a blind swap, is what this mirrors.
+    if try_fallback:
         fallback_result = _recognize_page_paddleocr(image)
         fallback_confidence = fallback_result["confidence_mean"]
         if fallback_confidence is not None and (

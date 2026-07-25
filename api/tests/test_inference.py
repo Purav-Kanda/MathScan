@@ -433,6 +433,63 @@ def test_recognize_page_keeps_pix2text_when_fallback_scores_lower(monkeypatch):
     assert result["regions"][0]["latex"] == "\\[\nok-ish\n\\]"
 
 
+def test_recognize_page_tries_fallback_even_when_pix2text_confidence_is_high(monkeypatch):
+    # WHY this test exists: the real bug found via api/eval/accuracy_benchmark.py
+    # -- politics_p15.jpg scored Pix2Text confidence at ~85% while it was
+    # actually hallucinating garbage (stray CJK characters, jumbled letter
+    # fragments). The OLD behavior gated the fallback behind a confidence
+    # threshold, so PaddleOCR never even got a chance to run on a page that
+    # badly needed it. This confirms the fix: PaddleOCR now runs whenever
+    # try_fallback=True, REGARDLESS of how confident Pix2Text claims to be,
+    # and the higher-scoring real result wins.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [{"text": "garbage", "type": "isolated", "score": 0.85, "position": FakePosition([[0, 0]])}]
+        ),
+    )
+    monkeypatch.setattr(
+        inference,
+        "_recognize_page_paddleocr",
+        lambda image: {
+            "regions": [{"latex": "actually correct", "type": "text", "bbox": None, "confidence": 0.90}],
+            "confidence_mean": 0.90,
+        },
+    )
+
+    result = inference.recognize_page(image=None, try_fallback=True)
+
+    assert result["confidence_mean"] == 0.90
+    assert result["regions"][0]["latex"] == "actually correct"
+
+
+def test_recognize_page_keeps_high_confidence_pix2text_over_worse_fallback(monkeypatch):
+    # WHY: running PaddleOCR unconditionally doesn't mean blindly preferring
+    # it -- if Pix2Text is both confident AND actually better, its result
+    # should still win, same evidence-based comparison as before.
+    monkeypatch.setattr(
+        inference,
+        "_p2t",
+        FakeP2T(
+            [{"text": "genuinely good", "type": "isolated", "score": 0.90, "position": FakePosition([[0, 0]])}]
+        ),
+    )
+    monkeypatch.setattr(
+        inference,
+        "_recognize_page_paddleocr",
+        lambda image: {
+            "regions": [{"latex": "worse read", "type": "text", "bbox": None, "confidence": 0.60}],
+            "confidence_mean": 0.60,
+        },
+    )
+
+    result = inference.recognize_page(image=None, try_fallback=True)
+
+    assert result["confidence_mean"] == 0.90
+    assert result["regions"][0]["latex"] == "\\[\ngenuinely good\n\\]"
+
+
 def test_llm_correct_text_noop_without_api_key(monkeypatch):
     # WHY this matters: CI never sets GROQ_API_KEY, and neither does a local
     # dev checkout by default -- this confirms the function degrades to a
@@ -814,8 +871,8 @@ def test_recognize_page_reports_low_confidence_breakdown(monkeypatch):
     # one bad region can still average out to a reassuring-looking score.
     # region_count/low_confidence_count let the frontend show the honest
     # breakdown ("2 of 3 sections below 70%") instead of just the average.
-    # Threshold matches the app's existing 0.70 default (recognize_page's
-    # fallback_threshold, and the frontend's ConfidenceBadge cutoff).
+    # Threshold matches the app's existing 0.70 default (the frontend's
+    # ConfidenceBadge cutoff).
     monkeypatch.setattr(
         inference,
         "_p2t",
