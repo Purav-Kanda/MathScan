@@ -48,22 +48,32 @@ from earlier testing and add more over time; the script works fine with
 any number ≥ 1, it just means less on a citable resume line with a
 small sample.
 
-## Difficulty mix: `discrete_math_sets_1.png` / `discrete_math_logic_1.png`
+## Where these images come from
 
-The first 16 images are all real photos of one student's own course
-notes (calculus, econ, poli-sci) -- naturally on the harder end, since
-that handwriting leans cursive. That's an honest sample of what THIS
-user's real notes look like, but it's a sample of one handwriting
-style's difficulty, not a spread of difficulty levels.
+This test set no longer contains any of the original photos of one
+student's own course notes (calculus, econ, poli-sci) that it started
+with -- those were removed at the user's explicit request, because that
+handwriting leaned cursive and made for a harder, less representative
+sample than the user wanted the reported number to reflect. Removing
+them is an honest tradeoff worth stating plainly: the accuracy number
+this benchmark now reports measures performance on clearly-legible,
+print-style real handwriting from other people's course notes, not on
+this project's own author's handwriting, which was the benchmark's
+original purpose. Treat any accuracy percentage from this point forward
+as "how well the app reads legible handwritten notes in general," not
+as a claim about this specific project's own worst-case handwriting.
 
-These two images are different on purpose: real, legible, print-style
-handwritten discrete-math lecture notes (sets, propositional logic) from
-a different, openly-published source (github.com/alison-li/math240 --
-McGill MATH 240, Discrete Structures, shared publicly by the notetaker).
-Added specifically so the test set includes at least some clearly-legible
-real handwriting, not only the hardest case -- a benchmark built entirely
-from worst-case input would be just as misleading in the other direction
-as one built entirely from best-case input. Kept to 2 images (not more)
-so the original 16 still dominate the sample; this is meant to broaden
-the difficulty range slightly, not to replace the harder, more
-representative photos with easier ones to inflate the number.
+All six images are real photos/scans of real students' handwritten
+course notes, openly published and shared with permission to reuse:
+
+- `discrete_math_sets_1.png`, `discrete_math_logic_1.png` --
+  github.com/alison-li/math240 (McGill MATH 240, Discrete Structures).
+- `algorithms_daa_1.png`, `compiler_design_1.png`, `operating_system_1.png`
+  -- github.com/shayan-ing/CSE-Handwritten-Notes (B.Tech CSE, Design &
+  Analysis of Algorithms / Compiler Design / Operating Systems), whose
+  README explicitly invites "download, use, study, and share."
+- `dsa_intro_1.png` -- github.com/pravinkumarsinghcv/DSA (Data
+  Structures & Algorithms intro notes). Note this one is a digital
+  stylus note (dark background, drawn in an app like GoodNotes), not a
+  photo of paper -- an easier case than the others, since it has no
+  camera lighting/angle/paper texture to contend with.
