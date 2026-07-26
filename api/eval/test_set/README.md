@@ -63,7 +63,7 @@ original purpose. Treat any accuracy percentage from this point forward
 as "how well the app reads legible handwritten notes in general," not
 as a claim about this specific project's own worst-case handwriting.
 
-All six images are real photos/scans of real students' handwritten
+All eleven images are real photos/scans of real students' handwritten
 course notes, openly published and shared with permission to reuse:
 
 - `discrete_math_sets_1.png`, `discrete_math_logic_1.png` --
@@ -77,3 +77,18 @@ course notes, openly published and shared with permission to reuse:
   stylus note (dark background, drawn in an app like GoodNotes), not a
   photo of paper -- an easier case than the others, since it has no
   camera lighting/angle/paper texture to contend with.
+- `statistics_intro_1.png`, `probability_events_1.png`,
+  `linear_algebra_intro_1.png` --
+  github.com/mirzayasirabdullahbaig07/AI-ML-Handwritten-Notes (math and
+  stats notes for AI/ML, real camera photos of notebook pages). No
+  separate LICENSE file, but the repo is openly published specifically
+  "to help others who are learning" -- same reuse spirit as the other
+  sources above, used here transformed into ground-truth labels for a
+  non-commercial accuracy test, not republished as-is.
+- `sql_subselect_1.png`, `python_modules_1.png` --
+  github.com/shubhamsawant0601/Handwritten_Notes (MySQL and Python
+  notes). These two add non-math prose and inline code/table content,
+  which the earlier all-math/CS-diagram set didn't cover.
+
+Still well short of the 30-50 image target above -- this is a step
+toward that, not the finish line.
