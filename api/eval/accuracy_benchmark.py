@@ -83,6 +83,7 @@ import concurrent.futures
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 TEST_SET_DIR = Path(__file__).resolve().parent / "test_set"
@@ -209,6 +210,25 @@ def _recognize_via_subprocess(
     raises RuntimeError with a clear reason (crash, timeout, or malformed
     output) so the caller can skip just this one image instead of losing the
     whole benchmark run.
+
+    WHY stdout/stderr go to TEMP FILES, not PIPE (`capture_output=True`) --
+    found via a real, reproducible Windows hang: every single image timed
+    out at the full --timeout value (tried both 900s and 180s), with zero
+    output captured, even though running the exact same command by hand in
+    a terminal finished in seconds. That combination -- identical command,
+    hangs only when piped -- is a known Windows subprocess pitfall: if the
+    child spawns a grandchild process that inherits the parent's stdout/
+    stderr pipe HANDLES (which Paddle's C++ extension JIT step can do --
+    it printed "No ccache found... recompiling all source files may be
+    required" right before every hang), the grandchild can keep those pipe
+    write-ends open even after the tracked child process exits. Python's
+    subprocess.run(capture_output=True) then blocks waiting for the pipes
+    to actually close (EOF), which never happens until the grandchild also
+    exits -- so it just sits there until --timeout fires, regardless of
+    whether the real work finished long ago. Redirecting to files instead
+    of pipes sidesteps this whole category of deadlock: a file handle
+    being held open by a grandchild doesn't block anyone from reading what
+    was already written to it.
     """
     # Marker string must match _recognize_one.py's RESULT_MARKER constant exactly.
     # Not imported directly to avoid relative-import fragility when this script is
@@ -222,21 +242,28 @@ def _recognize_via_subprocess(
     if not try_fallback:
         cmd.append("--no-fallback")
 
-    try:
-        completed = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"timed out after {exc.timeout}s") from exc
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        stdout_path = Path(tmp_dir) / "stdout.txt"
+        stderr_path = Path(tmp_dir) / "stderr.txt"
+        try:
+            with open(stdout_path, "w", encoding="utf-8") as out_f, open(stderr_path, "w", encoding="utf-8") as err_f:
+                subprocess.run(cmd, stdout=out_f, stderr=err_f, timeout=timeout)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"timed out after {exc.timeout}s") from exc
 
-    for line in completed.stdout.splitlines():
+        stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace")
+        stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace")
+
+    for line in stdout_text.splitlines():
         if line.startswith(result_marker):
             return json.loads(line[len(result_marker) :])
 
     # No RESULT_JSON line found -- the worker crashed or exited before
-    # printing its result. Surface the exit code and the tail of stderr
-    # (the most likely place a native crash message would land) so the
-    # failure is diagnosable instead of just silently missing.
-    stderr_tail = "\n".join(completed.stderr.strip().splitlines()[-15:])
-    raise RuntimeError(f"subprocess exited with code {completed.returncode}, no result produced.\n{stderr_tail}")
+    # printing its result. Surface the tail of stderr (the most likely
+    # place a native crash message would land) so the failure is
+    # diagnosable instead of just silently missing.
+    stderr_tail = "\n".join(stderr_text.strip().splitlines()[-15:])
+    raise RuntimeError(f"subprocess exited with no result produced.\n{stderr_tail}")
 
 
 def main():
