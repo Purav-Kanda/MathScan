@@ -85,10 +85,20 @@ course notes, openly published and shared with permission to reuse:
   "to help others who are learning" -- same reuse spirit as the other
   sources above, used here transformed into ground-truth labels for a
   non-commercial accuracy test, not republished as-is.
-- `sql_subselect_1.png`, `python_modules_1.png` --
-  github.com/shubhamsawant0601/Handwritten_Notes (MySQL and Python
-  notes). These two add non-math prose and inline code/table content,
-  which the earlier all-math/CS-diagram set didn't cover.
+- `sql_subselect_1.png`, `python_modules_1.png`,
+  `aptitude_ratio_1.png`, `css_selectors_1.png`,
+  `aptitude_time_speed_distance_1.png` --
+  github.com/shubhamsawant0601/Handwritten_Notes (MySQL, Python, CSS,
+  and Aptitude/quantitative-reasoning notes). The Aptitude pages add
+  dense word-problem math (ratios, percentages, rates) with no LaTeX-
+  style notation at all, a different flavor from the calculus/discrete-
+  math pages elsewhere in this set.
+
+Note: that same repo's `React-handwritten-notes` (a different author,
+parth-p1702) was checked and rejected -- despite the name, its
+`React_handWritten.pdf` is a typeset/formatted PDF (perfect monospace
+code blocks, no real handwriting), so it doesn't belong in a
+handwriting-recognition test set.
 
 Still well short of the 30-50 image target above -- this is a step
-toward that, not the finish line.
+toward that, not the finish line. Currently 14 images.
