@@ -81,6 +81,7 @@ default 300s) instead of blocking the whole run for 10 minutes.
 import argparse
 import concurrent.futures
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -229,6 +230,22 @@ def _recognize_via_subprocess(
     of pipes sidesteps this whole category of deadlock: a file handle
     being held open by a grandchild doesn't block anyone from reading what
     was already written to it.
+
+    WHY manual mkdtemp()/rmtree(ignore_errors=True), not the
+    TemporaryDirectory() context manager -- found via a second real bug,
+    right after the fix above: when an image genuinely DOES time out
+    (subprocess.run kills the tracked child, but a grandchild -- e.g. the
+    same Paddle JIT-compile process -- can outlive it), that grandchild
+    can still be holding stdout.txt/stderr.txt open on Windows. The
+    TemporaryDirectory context manager's own cleanup then fails with
+    PermissionError while trying to delete a file that's still in use --
+    and since that happens while __exit__ is unwinding the RuntimeError
+    we just raised for the timeout, the PermissionError replaces it and
+    escapes uncaught, crashing the entire benchmark run instead of just
+    recording that one image as failed. ignore_errors=True on the
+    cleanup means a leftover locked file is skipped (leaking a harmless
+    temp file until Windows cleans %TEMP% on its own) rather than taking
+    down the whole run.
     """
     # Marker string must match _recognize_one.py's RESULT_MARKER constant exactly.
     # Not imported directly to avoid relative-import fragility when this script is
@@ -242,7 +259,8 @@ def _recognize_via_subprocess(
     if not try_fallback:
         cmd.append("--no-fallback")
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
+    tmp_dir = tempfile.mkdtemp()
+    try:
         stdout_path = Path(tmp_dir) / "stdout.txt"
         stderr_path = Path(tmp_dir) / "stderr.txt"
         try:
@@ -253,6 +271,8 @@ def _recognize_via_subprocess(
 
         stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace")
         stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     for line in stdout_text.splitlines():
         if line.startswith(result_marker):
