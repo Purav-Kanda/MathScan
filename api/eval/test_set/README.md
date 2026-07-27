@@ -102,3 +102,32 @@ handwriting-recognition test set.
 
 Still well short of the 30-50 image target above -- this is a step
 toward that, not the finish line. Currently 14 images.
+
+## Current results.json: a partial run, and why
+
+`results.json` right now reports **71.4% mean character accuracy,
+73.0% mean word-overlap recall**, but only across **7 of the 14**
+images in `ground_truth.json` (see `not_run_images` in that file for
+which 7 weren't included). This wasn't a failure of those 7 images --
+they were run one at a time, directly through `eval/_recognize_one.py`,
+not through `eval/accuracy_benchmark.py`'s automated loop.
+
+Why not the automated script: `accuracy_benchmark.py` kills each
+subprocess after `--timeout` seconds, and on this project's CPU-only
+Windows dev machine, some pages took Pix2Text well over a minute per
+recognition pass (one page took 4+ minutes for a single pass, before
+PaddleOCR's fallback even ran) -- long enough to blow past even a
+300-900s timeout on a slow run, which made the automated script
+unreliable for this hardware even after two real subprocess bugs in it
+were found and fixed (see git history for `accuracy_benchmark.py`).
+Running each image directly, one at a time with no timeout, worked
+every time; it was just slow to do all 14 in one sitting.
+
+This is a genuinely smaller, less certain sample than the 14-image set
+this project has otherwise been building toward -- 7 images is enough
+to report an honest, real number, not enough to treat as a final,
+settled one. Running the remaining 7 (`probability_events_1.png`,
+`linear_algebra_intro_1.png`, `sql_subselect_1.png`,
+`python_modules_1.png`, `aptitude_ratio_1.png`, `css_selectors_1.png`,
+`aptitude_time_speed_distance_1.png`) the same way and folding them in
+would make this a full run against the current 14-image set.
