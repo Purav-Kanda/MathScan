@@ -1,0 +1,46 @@
+"""
+One-off diagnostic: prints the RAW dicts Pix2Text's recognize_text_formula
+returns for one real image, specifically checking whether `position` (the
+bounding-box field _assign_line_indices/_combine_regions_to_page rely on
+for real reading order) is actually populated with real coordinate data, or
+comes back None/missing -- exactly the same class of surprise that broke
+the earlier `line_number`-based fix. A real benchmark run on 2026-07-24
+showed predicted_text for politics_p15.jpg still one-fragment-per-blank-
+line, identical to the "no geometry" fallback pattern, which is what this
+checks directly instead of guessing again.
+
+Run from api/ (with the venv activated):
+    python eval/_debug_position.py
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from PIL import Image
+
+import inference
+
+inference.load_model()
+
+image_path = Path(__file__).resolve().parent / "test_set" / "images" / "politics_p15.jpg"
+image = Image.open(image_path).convert("RGB")
+
+raw_regions = inference._p2t.recognize_text_formula(image, return_text=False, resized_shape=768)
+
+print(f"Got {len(raw_regions)} raw regions.\n")
+for i, r in enumerate(raw_regions):
+    text_preview = repr(r.get("text", ""))[:30]
+    pos = r.get("position")
+    pos_type = type(pos).__name__
+    pos_preview = repr(pos)[:80] if pos is not None else "None"
+    print(f"[{i}] position type={pos_type}  value={pos_preview}  text={text_preview}")
+
+none_count = sum(1 for r in raw_regions if r.get("position") is None)
+print(f"\n{none_count} of {len(raw_regions)} regions have position=None")
+
+# Also print every key present on the first region, so we catch it if the
+# real field is named something slightly different than "position".
+if raw_regions:
+    print(f"\nAll keys on region [0]: {sorted(raw_regions[0].keys())}")

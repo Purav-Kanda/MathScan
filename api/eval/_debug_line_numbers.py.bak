@@ -1,0 +1,37 @@
+"""
+One-off diagnostic: prints the RAW dicts Pix2Text's recognize_text_formula
+returns for one real image, specifically to check whether `line_number` is
+actually populated with real integer values or comes back None/missing --
+inference.py's region-joining logic (_combine_regions_to_page) silently
+falls back to the old "blank line between everything" behavior whenever
+line_number is None, and a real benchmark run showed output that looked
+exactly like that fallback was firing for every region on real pages. This
+checks the actual raw data instead of guessing why.
+
+Run from api/: python eval/_debug_line_numbers.py
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from PIL import Image
+
+import inference
+
+inference.load_model()
+
+image_path = Path(__file__).resolve().parent / "test_set" / "images" / "politics_p15.jpg"
+image = Image.open(image_path).convert("RGB")
+
+raw_regions = inference._p2t.recognize_text_formula(image, return_text=False, resized_shape=768)
+
+print(f"Got {len(raw_regions)} raw regions.\n")
+for i, r in enumerate(raw_regions):
+    text_preview = repr(r.get("text", ""))[:40]
+    print(f"[{i}] line_number={r.get('line_number')!r}  type={r.get('type')!r}  text={text_preview}")
+
+line_numbers = [r.get("line_number") for r in raw_regions]
+none_count = sum(1 for ln in line_numbers if ln is None)
+print(f"\n{none_count} of {len(raw_regions)} regions have line_number=None")
