@@ -3,9 +3,9 @@ Page-level baselines for the OCR selector project.
 
 Reads eval/out/page_outputs.jsonl (written by _collect_one.py) and the
 labelled ground truth, then scores four strategies on the same pages:
-Pix2Text only, PaddleOCR only, the current rule (higher mean confidence
-wins), and the oracle (best of the two per page, an upper bound that no
-selector can beat).
+Pix2Text only, PaddleOCR only, the current rule (the same pick_page_result
+function production uses), and the oracle (best of the two per page, an
+upper bound that no selector can beat).
 
 Metric: character error rate = edit distance / length of the ground truth.
 Reported pooled (total edits / total truth characters) and as the mean of
@@ -16,72 +16,107 @@ Run from api/:  python eval/score_baselines.py
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent))
 
-from accuracy_benchmark import levenshtein_distance
+from accuracy_benchmark import levenshtein_distance  # noqa: E402
+from engine_selection import pick_page_result  # noqa: E402
 
 OUTPUTS_PATH = HERE / "out" / "page_outputs.jsonl"
 TRUTH_PATH = HERE / "test_set" / "ground_truth.json"
+ENGINES = ("pix2text", "paddle")
 
 
-def load_rows(path: Path) -> list:
+@dataclass(frozen=True)
+class PageScore:
+    image: str
+    truth_len: int
+    edits: dict  # engine name -> edit distance to the ground truth
+    rule_pick: str
+    oracle_pick: str
+
+    def cer(self, engine: str) -> float:
+        return self.edits[engine] / self.truth_len
+
+
+def load_rows(path: Path) -> dict:
+    """Map image name -> row. If an image appears twice (a rerun), the last row wins."""
+    rows = {}
     with open(path, encoding="utf-8") as fh:
-        return [json.loads(line) for line in fh if line.strip()]
+        for line in fh:
+            if line.strip():
+                row = json.loads(line)
+                rows[row["image"]] = row
+    return rows
 
 
-def current_rule_pick(row: dict) -> str:
-    """Mirror inference.recognize_page: PaddleOCR wins only on a strictly higher confidence."""
-    p2t_conf = row["pix2text"]["confidence"]
-    paddle_conf = row["paddle"]["confidence"]
-    if paddle_conf is not None and (p2t_conf is None or paddle_conf > p2t_conf):
-        return "paddle"
-    return "pix2text"
+def rule_pick_for(row: dict) -> str:
+    """Which engine the production rule keeps for this row."""
+    primary = {"confidence_mean": row["pix2text"]["confidence"]}
+    fallback = {"confidence_mean": row["paddle"]["confidence"]}
+    return "paddle" if pick_page_result(primary, fallback) is fallback else "pix2text"
 
 
-def edit_count(row: dict, engine: str, truth: str) -> int:
-    return levenshtein_distance(row[engine]["text"].strip(), truth.strip())
+def score_page(row: dict, truth: str) -> PageScore:
+    truth = truth.strip()
+    edits = {name: levenshtein_distance(row[name]["text"].strip(), truth) for name in ENGINES}
+    return PageScore(
+        image=row["image"],
+        truth_len=len(truth),
+        edits=edits,
+        rule_pick=rule_pick_for(row),
+        oracle_pick=min(ENGINES, key=edits.get),
+    )
 
 
-def score_strategy(label: str, picks: list, errs: list, truth_lens: list) -> dict:
-    chosen = [e[p] for e, p in zip(errs, picks)]
-    pooled = sum(chosen) / sum(truth_lens)
-    per_page = sum(c / n for c, n in zip(chosen, truth_lens)) / len(chosen)
-    return {"strategy": label, "pooled_cer": pooled, "mean_page_cer": per_page}
+def summarize(scores: list, pick) -> tuple:
+    """Return (pooled CER, mean per-page CER) for a strategy `pick(PageScore) -> engine`."""
+    chosen = [s.edits[pick(s)] for s in scores]
+    pooled = sum(chosen) / sum(s.truth_len for s in scores)
+    per_page = sum(c / s.truth_len for c, s in zip(chosen, scores, strict=True)) / len(scores)
+    return pooled, per_page
 
 
 def main():
     truths = json.loads(TRUTH_PATH.read_text(encoding="utf-8"))
-    rows = [r for r in load_rows(OUTPUTS_PATH) if r["image"] in truths]
+    rows = load_rows(OUTPUTS_PATH)
 
-    errs, truth_lens = [], []
-    for r in rows:
-        t = truths[r["image"]].strip()
-        errs.append({"pix2text": edit_count(r, "pix2text", t), "paddle": edit_count(r, "paddle", t)})
-        truth_lens.append(len(t))
+    unlabelled = sorted(set(rows) - set(truths))
+    if unlabelled:
+        print(f"ignoring {len(unlabelled)} pages with no ground truth: {', '.join(unlabelled)}")
+    empty_truth = sorted(name for name in rows if name in truths and not truths[name].strip())
+    if empty_truth:
+        print(f"ignoring {len(empty_truth)} pages with empty ground truth: {', '.join(empty_truth)}")
+    skip = set(unlabelled) | set(empty_truth)
+    scores = [score_page(row, truths[name]) for name, row in sorted(rows.items()) if name not in skip]
+    if not scores:
+        sys.exit("nothing to score")
 
-    rule_picks = [current_rule_pick(r) for r in rows]
-    oracle_picks = [min(e, key=e.get) for e in errs]
-
-    print(f"pages scored: {len(rows)}\n")
+    print(f"pages scored: {len(scores)}\n")
     print(f"{'page':38} {'truth':>5} {'p2t':>6} {'paddle':>7}  rule    oracle")
-    for r, e, n, rp, op in zip(rows, errs, truth_lens, rule_picks, oracle_picks):
-        print(f"{r['image']:38} {n:>5} {e['pix2text'] / n:>6.2f} {e['paddle'] / n:>7.2f}  {rp:7} {op}")
+    for s in scores:
+        print(
+            f"{s.image:38} {s.truth_len:>5} {s.cer('pix2text'):>6.2f} {s.cer('paddle'):>7.2f}"
+            f"  {s.rule_pick:7} {s.oracle_pick}"
+        )
 
-    results = [
-        score_strategy("pix2text only", ["pix2text"] * len(rows), errs, truth_lens),
-        score_strategy("paddle only", ["paddle"] * len(rows), errs, truth_lens),
-        score_strategy("current rule", rule_picks, errs, truth_lens),
-        score_strategy("oracle", oracle_picks, errs, truth_lens),
-    ]
+    strategies = {
+        "pix2text only": lambda s: "pix2text",
+        "paddle only": lambda s: "paddle",
+        "current rule": lambda s: s.rule_pick,
+        "oracle": lambda s: s.oracle_pick,
+    }
     print(f"\n{'strategy':16} {'pooled CER':>11} {'mean page CER':>14}")
-    for res in results:
-        print(f"{res['strategy']:16} {res['pooled_cer']:>11.3f} {res['mean_page_cer']:>14.3f}")
+    for label, pick in strategies.items():
+        pooled, per_page = summarize(scores, pick)
+        print(f"{label:16} {pooled:>11.3f} {per_page:>14.3f}")
 
-    disagree = sum(1 for rp, op in zip(rule_picks, oracle_picks) if rp != op)
-    print(f"\npages where the rule and the oracle pick different engines: {disagree} of {len(rows)}")
+    disagree = sum(1 for s in scores if s.rule_pick != s.oracle_pick)
+    print(f"\npages where the rule and the oracle pick different engines: {disagree} of {len(scores)}")
 
 
 if __name__ == "__main__":
