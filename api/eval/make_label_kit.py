@@ -13,11 +13,13 @@ which must not count as ink, while the green/blue/purple pens are bright but
 not dark. Pale grey has almost no color spread and a high brightness, so it
 falls out of both tests.
 
-Run from api/:  python eval/make_label_kit.py
+Run from api/:  python eval/make_label_kit.py   (add --force to rebuild existing crops)
 Output (not for git): eval/label_set/crops/*.png and eval/label_set/label.html
 """
 
+import argparse
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +32,7 @@ CROPS_DIR = OUT_DIR / "crops"
 
 # Real math pages only. calculus-001 is a notebook cover and calculus-002 is a
 # blank placeholder, so both are left out on purpose.
+SOURCE_SUFFIX = ".jpg.bak"  # the disabled originals keep their old extension
 PAGE_STEMS = [
     "calculus-003", "calculus-004", "calculus-005", "calculus-006",
     "calculus_p15", "calculus_p25", "calculus_p40", "calculus_p55",
@@ -71,7 +74,7 @@ def find_bands(mask: np.ndarray) -> list:
 
 
 def cut_page(stem: str) -> list:
-    src = IMAGES_DIR / f"{stem}.jpg.bak"
+    src = IMAGES_DIR / f"{stem}{SOURCE_SUFFIX}"
     page = Image.open(src).convert("RGB")
     pixels = np.array(page)
     mask = ink_mask(pixels)
@@ -187,6 +190,18 @@ refresh();
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="rebuild even if crops exist (crop names are numbered by position, "
+        "so rebuilding with different settings can shift them away from saved labels)",
+    )
+    args = parser.parse_args()
+
+    if CROPS_DIR.exists() and any(CROPS_DIR.glob("*.png")) and not args.force:
+        sys.exit(f"{CROPS_DIR} already has crops. Rebuilding can renumber them and break saved labels; use --force.")
+
     CROPS_DIR.mkdir(parents=True, exist_ok=True)
     all_crops = []
     for stem in PAGE_STEMS:
