@@ -12,6 +12,8 @@ from typing import Optional
 from PIL import Image, ImageOps
 from pix2text import Pix2Text
 
+from engine_selection import pick_page_result
+
 _p2t: Optional[Pix2Text] = None
 
 
@@ -1210,12 +1212,7 @@ def recognize_page(
     # same page at 85% confidence with genuinely correct content -- but
     # that comparison, not a blind swap, is what this mirrors.
     if try_fallback:
-        fallback_result = _recognize_page_paddleocr(image)
-        fallback_confidence = fallback_result["confidence_mean"]
-        if fallback_confidence is not None and (
-            confidence_mean is None or fallback_confidence > confidence_mean
-        ):
-            result = fallback_result
+        result = pick_page_result(result, _recognize_page_paddleocr(image))
 
     # M6.5: always the final step, regardless of which result (Pix2Text's
     # own, or the PaddleOCR fallback's) won above -- see
