@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MathScan labelling</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.11/katex.min.js"></script>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1b; --muted:#666; --line:#d8d8d8; --ok:#1a7f37; --bad:#c62828; --accent:#1f5fbf; --panel:#f6f7f9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#16181c; --fg:#ececec; --muted:#9aa0a6; --line:#33373d; --ok:#4cc26b; --bad:#ff6b6b; --accent:#6aa3ff; --panel:#1e2126; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui, sans-serif; }
+  header { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--line); padding:10px 16px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; }
+  #progress { color:var(--muted); }
+  #status { margin-left:auto; font-weight:600; }
+  #status.ok { color:var(--ok); } #status.bad { color:var(--bad); } #status.busy { color:var(--muted); }
+  main { max-width:980px; margin:0 auto; padding:16px; }
+  .crop-wrap { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; overflow:auto; max-height:52vh; }
+  .crop-wrap img { display:block; max-width:100%; margin:0 auto; cursor:zoom-in; background:#fff; }
+  .crop-wrap img.zoom { max-width:none; cursor:zoom-out; }
+  .meta { color:var(--muted); font-size:14px; margin:8px 0; display:flex; justify-content:space-between; gap:8px; }
+  textarea { width:100%; min-height:110px; font:15px/1.4 ui-monospace, Consolas, monospace; padding:10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); resize:vertical; }
+  textarea:focus { outline:2px solid var(--accent); }
+  .preview { border:1px dashed var(--line); border-radius:8px; padding:10px; margin-top:10px; min-height:48px; }
+  .preview .err { color:var(--bad); font:13px ui-monospace, Consolas, monospace; }
+  .preview .plain { white-space:pre-wrap; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; align-items:center; }
+  button { font:inherit; padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.on { outline:2px solid var(--accent); }
+  .hint { color:var(--muted); font-size:13px; }
+  .grid { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+  .chip { width:38px; padding:6px 0; text-align:center; font-size:13px; border-radius:6px; border:1px solid var(--line); background:var(--bg); }
+  .chip.done { background:var(--ok); border-color:var(--ok); color:#fff; }
+  .chip.skip { background:var(--muted); border-color:var(--muted); color:#fff; }
+  .chip.current { outline:3px solid var(--accent); outline-offset:1px; }
+  details { margin:14px 0; padding:10px 14px; border:1px solid var(--line); border-radius:8px; background:var(--panel); }
+  summary { cursor:pointer; font-weight:600; }
+  code { background:var(--bg); padding:1px 5px; border-radius:4px; border:1px solid var(--line); }
+  @media (max-width:600px) { main { padding:12px; } header { padding:8px 12px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>MathScan labelling</h1>
+  <span id="progress">loading...</span>
+  <span id="status" class="busy">connecting...</span>
+</header>
+<main>
+  <details>
+    <summary>How to label (read once)</summary>
+    <ul>
+      <li>Type exactly what the crop shows, in reading order, one line per row of work.</li>
+      <li>Math goes in as LaTeX. Words stay plain text. Example line: <code>\int_{0}^{1} \frac{1}{\sqrt{x}}\, dx = 2</code></li>
+      <li>Two columns side by side: type the left column first, then the right.</li>
+      <li>Ignore arrows, circles, underlines and scribbles. Include small side notes only if you can read them.</li>
+      <li>Do not copy what an OCR engine produced. Type what you see, so the answer key stays independent.</li>
+      <li>Blank or unreadable crop: press <b>Skip</b>.</li>
+      <li>The preview under the box shows how your LaTeX renders. A red message means the LaTeX is broken, so fix it.</li>
+      <li>Everything saves to disk automatically. Watch the status at the top right: green means saved.</li>
+    </ul>
+  </details>
+
+  <div class="meta"><span id="name"></span><span id="pos"></span></div>
+  <div class="crop-wrap"><img id="img" alt="crop to transcribe" title="click to zoom"></div>
+
+  <div class="row" style="margin-bottom:0"><span class="hint">Your transcription</span></div>
+  <textarea id="box" spellcheck="false" placeholder="Type the LaTeX for this crop here"></textarea>
+  <div class="preview" id="preview"></div>
+
+  <div class="row">
+    <button id="prev">&larr; Prev</button>
+    <button id="skip">Skip</button>
+    <button id="next" class="primary">Next &rarr;</button>
+    <span class="hint">Ctrl+Enter: next &nbsp; Ctrl+Shift+Enter: previous</span>
+  </div>
+  <div class="grid" id="grid"></div>
+</main>
+
+<script>
+"use strict";
+const SAVE_DELAY_MS = 500;
+const RETRY_MS = 4000;
+
+let crops = [];
+let labels = {};
+let index = 0;
+let dirty = false;
+let saving = false;
+let saveTimer = null;
+
+const el = (id) => document.getElementById(id);
+const entryFor = (name) => (labels[name] = labels[name] || { latex: "", skip: false });
+const isDone = (name) => { const e = labels[name]; return !!e && (e.skip || e.latex.trim().length > 0); };
+
+function setStatus(kind, text) { const s = el("status"); s.className = kind; s.textContent = text; }
+
+async function saveNow() {
+  if (saving) { return; }
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  saving = true;
+  const snapshot = JSON.stringify(labels);
+  setStatus("busy", "saving...");
+  try {
+    const res = await fetch("/api/labels", { method: "POST", headers: { "Content-Type": "application/json" }, body: snapshot });
+    if (!res.ok) { throw new Error((await res.json()).error || res.status); }
+    dirty = JSON.stringify(labels) !== snapshot;
+    const t = new Date().toLocaleTimeString();
+    setStatus("ok", dirty ? "saving..." : "saved to disk " + t);
+  } catch (err) {
+    setStatus("bad", "NOT SAVED: " + err.message + " (is label_server.py running?) retrying...");
+    dirty = true;
+    saveTimer = setTimeout(saveNow, RETRY_MS);
+  } finally {
+    saving = false;
+    if (dirty && !saveTimer) { saveTimer = setTimeout(saveNow, SAVE_DELAY_MS); }
+  }
+}
+
+function scheduleSave() {
+  dirty = true;
+  setStatus("busy", "unsaved changes...");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; saveNow(); }, SAVE_DELAY_MS);
+}
+
+function renderPreview(text) {
+  const host = el("preview");
+  host.textContent = "";
+  if (!text.trim()) { host.innerHTML = '<span class="hint">preview appears here</span>'; return; }
+  text.split("\n").forEach((line) => {
+    const row = document.createElement("div");
+    const looksLikeMath = /[\\^_{}]/.test(line);
+    if (looksLikeMath && window.katex) {
+      try { window.katex.render(line, row, { throwOnError: true, displayMode: false }); }
+      catch (err) { row.className = "err"; row.textContent = "LaTeX problem: " + String(err.message).replace(/^KaTeX parse error: /, ""); }
+    } else {
+      row.className = "plain";
+      row.textContent = line || " ";
+    }
+    host.appendChild(row);
+  });
+}
+
+function renderGrid() {
+  const grid = el("grid");
+  grid.textContent = "";
+  crops.forEach((name, i) => {
+    const b = document.createElement("button");
+    b.className = "chip" + (labels[name] && labels[name].skip ? " skip" : isDone(name) ? " done" : "") + (i === index ? " current" : "");
+    b.textContent = String(i + 1);
+    b.title = name;
+    b.addEventListener("click", () => go(i));
+    grid.appendChild(b);
+  });
+}
+
+function renderProgress() {
+  const done = crops.filter(isDone).length;
+  el("progress").textContent = done + " of " + crops.length + " done";
+}
+
+function show() {
+  const name = crops[index];
+  const entry = entryFor(name);
+  el("name").textContent = name;
+  el("pos").textContent = "crop " + (index + 1) + " of " + crops.length;
+  const img = el("img");
+  img.className = "";
+  img.src = "/crops/" + encodeURIComponent(name);
+  el("box").value = entry.latex;
+  el("skip").className = entry.skip ? "on" : "";
+  el("skip").textContent = entry.skip ? "Skipped (click to undo)" : "Skip";
+  renderPreview(entry.latex);
+  renderGrid();
+  renderProgress();
+  el("box").focus();
+  window.scrollTo({ top: 0 });
+}
+
+function go(i) {
+  if (i < 0 || i >= crops.length) { return; }
+  index = i;
+  show();
+}
+
+el("box").addEventListener("input", (ev) => {
+  const entry = entryFor(crops[index]);
+  entry.latex = ev.target.value.replace(/\r\n/g, "\n");
+  renderPreview(entry.latex);
+  renderProgress();
+  renderGrid();
+  scheduleSave();
+});
+el("skip").addEventListener("click", () => {
+  const entry = entryFor(crops[index]);
+  entry.skip = !entry.skip;
+  scheduleSave();
+  if (entry.skip) { go(index + 1); } else { show(); }
+});
+el("next").addEventListener("click", () => go(index + 1));
+el("prev").addEventListener("click", () => go(index - 1));
+el("img").addEventListener("click", (ev) => ev.target.classList.toggle("zoom"));
+document.addEventListener("keydown", (ev) => {
+  if (ev.ctrlKey && ev.key === "Enter") { ev.preventDefault(); go(ev.shiftKey ? index - 1 : index + 1); }
+});
+window.addEventListener("beforeunload", (ev) => { if (dirty) { ev.preventDefault(); ev.returnValue = ""; } });
+
+async function start() {
+  try {
+    const [cropRes, labelRes] = await Promise.all([fetch("/api/crops"), fetch("/api/labels")]);
+    if (!cropRes.ok || !labelRes.ok) { throw new Error("server error"); }
+    crops = await cropRes.json();
+    labels = await labelRes.json();
+  } catch (err) {
+    setStatus("bad", "cannot reach the server. Run: python eval/label_server.py");
+    el("progress").textContent = "";
+    return;
+  }
+  if (!crops.length) { setStatus("bad", "no crops found"); return; }
+  const firstOpen = crops.findIndex((name) => !isDone(name));
+  index = firstOpen === -1 ? 0 : firstOpen;
+  setStatus("ok", "connected, nothing unsaved");
+  show();
+}
+start();
+</script>
+</body>
+</html>
