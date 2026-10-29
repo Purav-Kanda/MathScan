@@ -119,7 +119,7 @@ Splits PDFs into per-page JPEGs at 200 DPI via Poppler; raises `EncryptedPDFErro
 
 ## 6. Testing and CI
 
-- **68 pytest tests**: 55 in `test_inference.py`, 6 `test_export.py`, 4 `test_pdf_preprocessor.py`, 3 `test_share.py`.
+- **93 pytest tests**: 55 in `test_inference.py`, 6 `test_export.py`, 4 `test_pdf_preprocessor.py`, 3 `test_share.py`, 6 `test_engine_selection.py`, 19 `test_text_normalize.py`.
 - Pix2Text is faked in tests (`_p2t` global), so the suite runs without model weights or GPU. PaddleOCR and Groq are never invoked in CI. PDF preprocessing tests use the real Poppler binaries; PDF export compile is not exercised in CI (needs Tectonic) — the retry logic is tested by mocking `_run_tectonic`.
 - GitHub Actions (`.github/workflows/api-tests.yml`): on push/PR to `main`, Ubuntu, Python 3.11, installs Poppler + libgl1/libglib2.0, `pip install -r api/requirements.txt`, runs `pytest` in `api/`. Python version intentionally matches Modal's.
 
@@ -140,6 +140,68 @@ Splits PDFs into per-page JPEGs at 200 DPI via Poppler; raises `EncryptedPDFErro
 | Current (`results.json`) | 7 of 14 images, legible external notes | **71.4%** | **73.0%** |
 
 Per-image (current): statistics 91.8, discrete-math sets 82.9, compiler design 75.3, operating systems 71.7, DSA intro 66.9, discrete-math logic 58.0, algorithms 53.5. The 80% target (NFR-010) is not met. The 14-image set came from openly shared GitHub notes (sources in `eval/test_set/README.md`); 7 images were run manually via `_recognize_one.py` and 7 remain unscored.
+
+### 7.1 OCR engine selector experiment
+
+**Question.** MathScan runs Pix2Text and PaddleOCR on every page and keeps the result with the higher confidence. I tested whether a small trained model that chooses between the two outputs would beat that rule.
+
+**Result.** No. I did not build the selector, because the measured upper bound on its gain is too small to justify it.
+
+**How it was tested**
+- **Metric.** Character error rate (CER) = edit distance / length of the ground truth. Reported pooled (total edits over total characters) and as a mean per item.
+- **Oracle.** Picks the better of the two engines per item using the true answer. No selector can beat it, so it is the ceiling on what a selector could gain.
+- **Page level.** 14 external handwriting pages.
+- **Crop level.** 79 hand-labelled line crops cut from 11 pages of the author's own calculus notes.
+- **Normalizer.** Pix2Text outputs LaTeX, Paddle outputs plain text, and the labels are plain math. Comparing raw strings would favour whichever engine shares the label notation, so everything goes through `canonical_text` first. It strips `\[ \]`, turns `\frac{1}{2}` into `1/2`, drops spacing and case, and treats brackets as equal. It is lossy on purpose and is for comparison only.
+
+**Page level (14 pages)**
+
+| Strategy | Pooled CER | Mean page CER |
+|---|---|---|
+| Pix2Text only | 0.892 | 0.914 |
+| PaddleOCR only | 0.265 | 0.272 |
+| Current rule | 0.265 | 0.272 |
+| Oracle | 0.265 | 0.272 |
+
+Paddle won every page, so the rule already equals the oracle there.
+
+**Crop level (79 crops, 11 pages)**
+
+| Strategy | Pooled CER | Mean CER | Exact match |
+|---|---|---|---|
+| Pix2Text only | 0.786 | 0.740 | 5.1% |
+| PaddleOCR only | 0.656 | 0.642 | 1.3% |
+| Current rule | 0.618 | 0.567 | 2.5% |
+| Oracle | 0.578 | 0.489 | 6.3% |
+
+The rule and the oracle pick different engines on 16 of 79 crops. Paddle is the better engine on 45 crops, Pix2Text on 33, and 1 is a tie.
+
+**What this shows**
+1. The existing rule is a good design. On handwritten math crops it beats either engine used alone.
+2. A perfect selector would gain only 0.04 pooled CER over the rule (0.618 to 0.578). That is too small to prove with 79 crops from one writer.
+3. The bottleneck is recognition, not selection. Even the oracle has a CER of 0.578 and only 6.3% exact matches.
+
+**Code added**
+- `api/engine_selection.py`: the selection rule, pulled out of `inference.py` into a pure function (`pick_page_result`). Behaviour unchanged. A future selector would plug in here, with the old rule as the fallback.
+- `api/text_normalize.py`: the shared comparison form described above.
+- `api/eval/_collect_one.py`, `collect_batch.py`: collect both engines' outputs, one process per batch of 8 (long-lived processes crashed natively before). Resumable, skips finished images.
+- `api/eval/score_baselines.py` (page level), `score_crops.py` (crop level): compute the baselines and the oracle.
+- `api/eval/make_label_kit.py`, `label_server.py`, `label_tool.html`: cut pages into ink-band crops, plus a local labelling tool with autosave, atomic writes and a backup.
+- Tests: `test_engine_selection.py` (6 cases) and `test_text_normalize.py` (19 cases).
+
+**Design choices**
+- Measure before building: the oracle gap was checked first, so no model was trained for a 0.04 ceiling.
+- Page-level labels are plain text and favour Paddle, which is why the normalizer and the crop-level test on handwritten math were added.
+- Pages stand in for the writer, so any future split keeps crops from the same page together.
+
+**Limitations**
+- 79 crops from 11 pages of a single writer.
+- The Groq correction pass is not included in these numbers.
+- The crop-level rule uses crop confidences, while production applies it to whole pages.
+- The normalizer is lossy, so absolute CER values are approximate. Comparisons between strategies use the same normalizer, so they are fair.
+- Production latency on Modal was not measured.
+
+**Next (not started).** Fine-tune the recognizer on a public handwritten-math dataset, using the 79 crops as a held-out test set. The number to beat is 0.618 pooled CER.
 
 ---
 
